@@ -1,6 +1,6 @@
 from typing import Dict
 
-from helpers.common_helper import require_keys
+from helpers.common_helper.common_helper import require_keys
 from helpers.common_helper.logger_helper import LoggerHelper
 from helpers.app_logic_helpers.user_helper import UserHelper
 from sync_processor_registry.processor_registry import ProcessorRegistry
