@@ -6,7 +6,7 @@ Handles dispatching actions to appropriate processor methods using an action map
 import traceback
 from typing import Callable, Dict
 
-from helpers.logger_helper import LoggerHelper
+from helpers.common_helper.logger_helper import LoggerHelper
 
 logger = LoggerHelper(__name__).get_logger()
 

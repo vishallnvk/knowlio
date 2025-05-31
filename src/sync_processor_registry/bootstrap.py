@@ -9,7 +9,7 @@ import pkgutil
 import traceback
 
 import sync_processors as processors_pkg
-from helpers.logger_helper import LoggerHelper
+from helpers.common_helper.logger_helper import LoggerHelper
 
 logger = LoggerHelper(__name__).get_logger()
 

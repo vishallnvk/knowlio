@@ -4,7 +4,7 @@ from typing import Any, Dict
 
 from exceptions.processor_exceptions.exceptions import ProcessorNotFoundError, InvalidInputError, \
     ProcessorExecutionError
-from helpers.logger_helper import LoggerHelper
+from helpers.common_helper.logger_helper import LoggerHelper
 from models.event_input import ProcessorEventInput
 from sync_processor_registry.bootstrap import load_all_processors
 from sync_processor_registry.processor_registry import ProcessorRegistry
