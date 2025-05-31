@@ -17,9 +17,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
     try:
         load_all_processors()
-        processor_name, payload = _parse_event(event)
+        processor_name, action, payload = _parse_event(event)
         processor = _resolve_processor(processor_name)
-        result = _execute_processor(processor, payload)
+        result = _execute_processor(processor, action, payload)
         return _response(200, result)
 
     except ProcessorNotFoundError as e:
@@ -39,10 +39,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         return _response(500, "Internal server error")
 
 
-def _parse_event(event: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
+def _parse_event(event: Dict[str, Any]) -> tuple[str, str, Dict[str, Any]]:
     try:
         parsed_input = ProcessorEventInput(event)
-        return parsed_input.processor_name, parsed_input.payload
+        return parsed_input.processor_name, parsed_input.action, parsed_input.payload
     except ValueError as e:
         raise InvalidInputError(f"Validation failed: {str(e)}")
 
@@ -56,11 +56,11 @@ def _resolve_processor(processor_name: str):
         raise ProcessorNotFoundError(str(e))
 
 
-def _execute_processor(processor_class, payload: Dict[str, Any]) -> Any:
+def _execute_processor(processor_class, action: str, payload: Dict[str, Any]) -> Any:
     try:
-        logger.info("Executing processor with payload: %s", json.dumps(payload, default=str))
+        logger.info("Executing processor with action: %s, payload: %s", action, json.dumps(payload, default=str))
         processor_instance = processor_class()
-        return processor_instance.process(payload)
+        return processor_instance.process(action, payload)
     except Exception as e:
         logger.error("Processor execution failed: %s", str(e))
         logger.error("Traceback:\n%s", traceback.format_exc())

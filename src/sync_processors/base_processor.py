@@ -16,15 +16,10 @@ class BaseProcessor:
         self.action_map = action_map
         logger.debug("Initialized BaseProcessor with actions: %s", list(action_map.keys()))
 
-    def process(self, payload: Dict) -> Dict:
-        logger.info("Processing payload: %s", payload)
+    def process(self, action: str, payload: Dict) -> Dict:
+        logger.info("Processing action: %s, payload: %s", action, payload)
 
         try:
-            action = payload.get("action")
-            if not action:
-                logger.error("Missing 'action' in payload")
-                raise ValueError("Missing 'action' in payload")
-
             if action not in self.action_map:
                 logger.error("Unsupported action: %s", action)
                 raise ValueError(f"Unsupported action: {action}")
