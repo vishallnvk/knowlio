@@ -54,3 +54,17 @@ class DynamoDBHelper:
             )
             logger.info("Scan returned %d items", len(response.get("Items", [])))
             return response.get("Items", [])
+
+    def scan_table(self) -> List[Dict]:
+        """Scan the entire table and return all items"""
+        logger.info("Scanning entire table: %s", self.table_name)
+        response = self.table.scan()
+        items = response.get("Items", [])
+        
+        # Handle pagination for large tables
+        while "LastEvaluatedKey" in response:
+            response = self.table.scan(ExclusiveStartKey=response["LastEvaluatedKey"])
+            items.extend(response.get("Items", []))
+        
+        logger.info("Scan returned %d items total", len(items))
+        return items

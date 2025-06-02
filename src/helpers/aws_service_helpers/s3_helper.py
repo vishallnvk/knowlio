@@ -52,3 +52,24 @@ class S3Helper:
     def download_file(self, key: str, download_path: str) -> None:
         logger.info(f"Downloading s3://{self.bucket_name}/{key} to {download_path}")
         self.s3.download_file(self.bucket_name, key, download_path)
+
+    def upload_data_as_json(self, data: str, key: str) -> str:
+        """Upload string data directly to S3 as JSON/JSONL format"""
+        logger.info(f"Uploading data to s3://{self.bucket_name}/{key}")
+        self.s3.put_object(
+            Bucket=self.bucket_name,
+            Key=key,
+            Body=data.encode('utf-8'),
+            ContentType='application/json'
+        )
+        return f"s3://{self.bucket_name}/{key}"
+
+    def generate_export_key(self, prefix: str, date_str: str, timestamp: str, format_type: str = "jsonl") -> str:
+        """Generate standardized S3 key for exports"""
+        return f"{prefix}/{date_str}/{prefix}_{timestamp}.{format_type}"
+
+    def list_objects(self, prefix: str = "") -> list:
+        """List objects in the bucket with optional prefix filter"""
+        logger.info(f"Listing objects in s3://{self.bucket_name} with prefix={prefix}")
+        response = self.s3.list_objects_v2(Bucket=self.bucket_name, Prefix=prefix)
+        return response.get('Contents', [])

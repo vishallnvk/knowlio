@@ -29,5 +29,27 @@ class DynamoDBStack(Stack):
             )
         )
 
+        # License Table
+        license_table = DynamoDBTableConstruct(
+            self, "LicenseTable",
+            DynamoDBTableProps(
+                table_name="licenses",
+                partition_key_name="license_id",
+                partition_key_type=dynamodb.AttributeType.STRING
+            )
+        )
+
+        # Usage Logs Table
+        usage_logs_table = DynamoDBTableConstruct(
+            self, "UsageLogsTable",
+            DynamoDBTableProps(
+                table_name="usage_logs",
+                partition_key_name="log_id",
+                partition_key_type=dynamodb.AttributeType.STRING
+            )
+        )
+
         self.user_table = user_table.table
         self.content_table = content_table.table
+        self.license_table = license_table.table
+        self.usage_logs_table = usage_logs_table.table
