@@ -165,6 +165,25 @@ class KnowlioApiRoutes:
                 description="Get usage report by consumer",
                 path_parameters=["consumer_id"]
             ),
+            
+            # Google Books API Routes
+            ApiRoute(
+                method="GET",
+                path="books/{isbn}",
+                processor_name="google_books",
+                action="get_book_details",
+                description="Get complete book details by ISBN",
+                path_parameters=["isbn"]
+            ),
+            ApiRoute(
+                method="GET",
+                path="books/{isbn}/filtered",
+                processor_name="google_books",
+                action="get_book_details_filtered",
+                description="Get filtered book details by ISBN",
+                path_parameters=["isbn"],
+                query_parameters=["fields"]
+            ),
         ]
     
     @staticmethod
