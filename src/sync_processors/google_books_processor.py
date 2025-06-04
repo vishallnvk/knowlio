@@ -21,6 +21,8 @@ class GoogleBooksProcessor(BaseProcessor):
         super().__init__({
             "get_book_details": self._get_book_details,
             "get_book_details_filtered": self._get_book_details_filtered,
+            "get_books_by_author": self._get_books_by_author,
+            "get_books_by_author_filtered": self._get_books_by_author_filtered,
         })
 
     def _get_book_details(self, payload: Dict) -> Dict:
@@ -55,3 +57,63 @@ class GoogleBooksProcessor(BaseProcessor):
             return {"error": "Invalid 'fields' parameter: must be a list of field names"}
             
         return self.helper.get_book_details_filtered(payload["isbn"], fields)
+        
+    def _get_books_by_author(self, payload: Dict) -> Dict:
+        """
+        Get all books written by a specific author.
+        Handles pagination internally and returns a complete list.
+        
+        Args:
+            payload: Dict containing 'author_name' key and optional 'max_results' integer
+            
+        Returns:
+            Dict containing a list of books and metadata
+        """
+        require_keys(payload, ["author_name"])
+        author_name = payload["author_name"]
+        max_results = payload.get("max_results", 100)
+        
+        # Ensure max_results is an integer
+        try:
+            max_results = int(max_results)
+            if max_results <= 0:
+                logger.error("Invalid 'max_results' parameter: must be a positive integer")
+                return {"error": "Invalid 'max_results' parameter: must be a positive integer"}
+        except ValueError:
+            logger.error("Invalid 'max_results' parameter: must be a valid integer")
+            return {"error": "Invalid 'max_results' parameter: must be a valid integer"}
+        
+        return self.helper.get_books_by_author(author_name, max_results)
+        
+    def _get_books_by_author_filtered(self, payload: Dict) -> Dict:
+        """
+        Get all books written by a specific author with only specified fields.
+        
+        Args:
+            payload: Dict containing 'author_name' key, optional 'fields' list,
+                    and optional 'max_results' integer
+            
+        Returns:
+            Dict containing a list of filtered books and metadata
+        """
+        require_keys(payload, ["author_name"])
+        author_name = payload["author_name"]
+        fields = payload.get("fields")
+        max_results = payload.get("max_results", 100)
+        
+        # If fields is provided, ensure it's a list
+        if fields is not None and not isinstance(fields, list):
+            logger.error("Invalid 'fields' parameter: must be a list")
+            return {"error": "Invalid 'fields' parameter: must be a list of field names"}
+        
+        # Ensure max_results is an integer
+        try:
+            max_results = int(max_results)
+            if max_results <= 0:
+                logger.error("Invalid 'max_results' parameter: must be a positive integer")
+                return {"error": "Invalid 'max_results' parameter: must be a positive integer"}
+        except ValueError:
+            logger.error("Invalid 'max_results' parameter: must be a valid integer")
+            return {"error": "Invalid 'max_results' parameter: must be a valid integer"}
+        
+        return self.helper.get_books_by_author_filtered(author_name, fields, max_results)

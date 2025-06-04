@@ -88,8 +88,15 @@ class KnowlioApiRoutes:
                 path="content",
                 processor_name="content",
                 action="list_content_by_publisher",
-                description="List content by publisher",
-                query_parameters=["publisher_id"]
+                description="List content by publisher with pagination",
+                query_parameters=["publisher_id", "limit", "pagination_token"]
+            ),
+            ApiRoute(
+                method="POST",
+                path="content/search",
+                processor_name="content",
+                action="search_content",
+                description="Search content with flexible parameters and pagination",
             ),
             ApiRoute(
                 method="POST",
@@ -183,6 +190,78 @@ class KnowlioApiRoutes:
                 description="Get filtered book details by ISBN",
                 path_parameters=["isbn"],
                 query_parameters=["fields"]
+            ),
+            ApiRoute(
+                method="GET",
+                path="books/author/{author_name}",
+                processor_name="google_books",
+                action="get_books_by_author",
+                description="Get all books by a specific author",
+                path_parameters=["author_name"],
+                query_parameters=["max_results"]
+            ),
+            ApiRoute(
+                method="GET",
+                path="books/author/{author_name}/filtered",
+                processor_name="google_books",
+                action="get_books_by_author_filtered",
+                description="Get filtered book details for all books by a specific author",
+                path_parameters=["author_name"],
+                query_parameters=["fields", "max_results"]
+            ),
+            
+            # S3 Upload Routes
+            ApiRoute(
+                method="POST",
+                path="uploads/url",
+                processor_name="s3_upload",
+                action="generate_presigned_upload_url",
+                description="Generate a presigned URL for direct file upload to S3"
+            ),
+            ApiRoute(
+                method="GET",
+                path="uploads/download/{key}",
+                processor_name="s3_upload",
+                action="generate_presigned_download_url",
+                description="Generate a presigned URL for file download from S3",
+                path_parameters=["key"]
+            ),
+            
+            # S3 Multipart Upload Routes
+            ApiRoute(
+                method="POST",
+                path="uploads/multipart/init",
+                processor_name="s3_upload",
+                action="initiate_multipart_upload",
+                description="Initiate a multipart upload process"
+            ),
+            ApiRoute(
+                method="POST",
+                path="uploads/multipart/part-url",
+                processor_name="s3_upload",
+                action="generate_presigned_part_upload_url",
+                description="Generate a presigned URL for uploading a specific part"
+            ),
+            ApiRoute(
+                method="POST",
+                path="uploads/multipart/complete",
+                processor_name="s3_upload",
+                action="complete_multipart_upload",
+                description="Complete a multipart upload after all parts have been uploaded"
+            ),
+            ApiRoute(
+                method="DELETE",
+                path="uploads/multipart/abort",
+                processor_name="s3_upload",
+                action="abort_multipart_upload",
+                description="Abort a multipart upload and remove any uploaded parts"
+            ),
+            ApiRoute(
+                method="GET",
+                path="uploads/multipart/parts",
+                processor_name="s3_upload",
+                action="list_parts",
+                description="List all parts that have been uploaded for a specific multipart upload"
             ),
         ]
     
