@@ -4,3 +4,4 @@ constructs>=10.0.0,<11.0.0
 # Lambda runtime deps (used in app logic)
 boto3
 requests
+requests-aws4auth  # For AWS authentication with OpenSearch

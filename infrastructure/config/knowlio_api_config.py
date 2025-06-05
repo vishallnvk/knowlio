@@ -25,17 +25,51 @@ class KnowlioApiConfig:
     
     @staticmethod
     def get_route_definitions() -> List[RouteDefinition]:
-        """Convert KnowlioApiRoutes to generic RouteDefinition format"""
+        """Convert KnowlioApiRoutes to generic RouteDefinition format."""
         knowlio_routes = KnowlioApiRoutes.get_all_routes()
         
+        # Group common routes by method to reduce IAM policy size
+        # Use method-based grouping instead of path wildcards since API Gateway doesn't allow * in paths
         route_definitions = []
+        processed_paths = set()
+        
+        # First pass: Add routes with greedy path parameters where possible
+        # API Gateway allows {proxy+} for greedy path parameters
+        for path_base in ["users", "content", "licenses", "analytics", "books", "uploads"]:
+            # Add base path with greedy parameter for each HTTP method
+            for method in ["GET", "POST", "PUT", "DELETE", "PATCH"]:
+                # Check if any route matches this pattern
+                has_matching_routes = False
+                for route in knowlio_routes:
+                    if route.path.startswith(f"{path_base}/") and route.method == method:
+                        has_matching_routes = True
+                        break
+                
+                if has_matching_routes:
+                    # Add a greedy route for this base path and method
+                    route_def = RouteDefinition(
+                        method=method,
+                        # Use API Gateway's greedy path parameter syntax
+                        path=f"{path_base}/{{proxy+}}",
+                        description=f"{method} requests for {path_base}"
+                    )
+                    route_definitions.append(route_def)
+                    # Mark all matching routes as processed
+                    for route in knowlio_routes:
+                        if route.path.startswith(f"{path_base}/") and route.method == method:
+                            processed_paths.add(f"{route.method}:{route.path}")
+        
+        # Second pass: Add any routes that weren't covered by greedy paths
         for route in knowlio_routes:
-            route_def = RouteDefinition(
-                method=route.method,
-                path=route.path,
-                description=route.description
-            )
-            route_definitions.append(route_def)
+            route_key = f"{route.method}:{route.path}"
+            if route_key not in processed_paths:
+                route_def = RouteDefinition(
+                    method=route.method,
+                    path=route.path,
+                    description=route.description
+                )
+                route_definitions.append(route_def)
+                processed_paths.add(route_key)
         
         return route_definitions
     

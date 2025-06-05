@@ -155,6 +155,8 @@ class ApiGatewayConstruct(Construct):
             current_resource = resource_cache[current_path]
         
         # Add the HTTP method to the final resource
+        # Note: We've simplified the system by optimizing routes in knowlio_api_config.py
+        # This uses fewer unique paths with wildcards to keep policy size small
         current_resource.add_method(
             route.method,
             self.lambda_integration,
