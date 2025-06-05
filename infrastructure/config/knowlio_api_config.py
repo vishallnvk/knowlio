@@ -5,7 +5,7 @@ Business logic for setting up the Knowlio REST API using the generic API Gateway
 
 from typing import List
 from infrastructure.app_constructs.api_gateway_construct import ApiGatewayProps, RouteDefinition
-from src.config.api_routes import KnowlioApiRoutes
+from infrastructure.config.api_routes import KnowlioApiRoutes
 
 
 class KnowlioApiConfig:

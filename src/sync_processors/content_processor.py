@@ -7,6 +7,8 @@ from helpers.common_helper.logger_helper import LoggerHelper
 from helpers.app_logic_helpers.content_helper import ContentHelper, ContentValidationError
 from sync_processor_registry.processor_registry import ProcessorRegistry
 from sync_processors.base_processor import BaseProcessor
+from enums.content_status import ContentStatus, WorkflowStatus
+from enums.content_type import ContentType
 
 logger = LoggerHelper(__name__).get_logger()
 
@@ -97,6 +99,22 @@ class ContentProcessor(BaseProcessor):
         """
         try:
             require_keys(payload, ["content_id", "updates"])
+            
+            # Convert status string values to enum values if present
+            if "status" in payload["updates"]:
+                status = payload["updates"]["status"]
+                if isinstance(status, str) and ContentStatus.is_valid(status):
+                    # Keep as string but validate against enum values
+                    pass
+                    
+            # Convert workflow status string values to enum values if present
+            for field in ["rag_status", "training_status", "licensing_status"]:
+                if field in payload["updates"]:
+                    status = payload["updates"][field]
+                    if isinstance(status, str) and WorkflowStatus.is_valid(status):
+                        # Keep as string but validate against enum values
+                        pass
+                        
             return self.helper.update_content_metadata(payload["content_id"], payload["updates"])
         except ContentValidationError as e:
             logger.warning(f"Content validation error: {str(e)}")
@@ -117,14 +135,30 @@ class ContentProcessor(BaseProcessor):
         Examples:
         - Update title: {"content_id": "123", "attribute": "title", "value": "New Title"}
         - Update metadata field: {"content_id": "123", "attribute": "metadata.isbn", "value": "1234567890"}
-        - Update status fields: {"content_id": "123", "attribute": "rag_status", "value": "ENABLED"}
+        - Update status fields: {"content_id": "123", "attribute": "rag_status", "value": WorkflowStatus.ENABLED.value}
         """
         try:
             require_keys(payload, ["content_id", "attribute", "value"])
+            
+            attribute = payload["attribute"]
+            value = payload["value"]
+            
+            # Validate workflow status attributes against enum values
+            if attribute in ["rag_status", "training_status", "licensing_status"]:
+                if not WorkflowStatus.is_valid(value):
+                    valid_values = ", ".join(WorkflowStatus.get_valid_statuses())
+                    return {"error": f"Invalid {attribute} value: {value}. Valid values: {valid_values}"}
+            
+            # Validate status attribute against enum values
+            if attribute == "status":
+                if not ContentStatus.is_valid(value):
+                    valid_values = ", ".join(ContentStatus.get_valid_statuses())
+                    return {"error": f"Invalid status value: {value}. Valid values: {valid_values}"}
+            
             return self.helper.update_content_attribute(
                 content_id=payload["content_id"],
-                attribute=payload["attribute"],
-                value=payload["value"]
+                attribute=attribute,
+                value=value
             )
         except ContentValidationError as e:
             logger.warning(f"Content validation error: {str(e)}")
@@ -206,17 +240,33 @@ class ContentProcessor(BaseProcessor):
         - pagination_token: Token for retrieving the next page of results
                 
         Examples:
-        - Search by type: {"type": "BOOK"}
-        - Search by status: {"status": "ACTIVE"}
+        - Search by type: {"type": ContentType.BOOK.value}
+        - Search by status: {"status": ContentStatus.ACTIVE.value}
         - Search by title pattern: {"title": "python"}
         - Search by metadata: {"metadata.isbn": "1234567890"}
-        - Search by workflow status: {"rag_status": "ENABLED"}
+        - Search by workflow status: {"rag_status": WorkflowStatus.ENABLED.value}
         """
         try:
             # Extract pagination parameters
             search_params = payload.copy()
             limit = search_params.pop("limit", None)
             pagination_token = search_params.pop("pagination_token", None)
+            
+            # Validate status parameters if provided
+            if "status" in search_params and not ContentStatus.is_valid(search_params["status"]):
+                valid_statuses = ", ".join(ContentStatus.get_valid_statuses())
+                return {"error": f"Invalid status: {search_params['status']}. Valid statuses: {valid_statuses}"}
+                
+            # Validate workflow status parameters if provided
+            for status_field in ["rag_status", "training_status", "licensing_status"]:
+                if status_field in search_params and not WorkflowStatus.is_valid(search_params[status_field]):
+                    valid_statuses = ", ".join(WorkflowStatus.get_valid_statuses())
+                    return {"error": f"Invalid {status_field}: {search_params[status_field]}. Valid values: {valid_statuses}"}
+                    
+            # Validate type parameter if provided
+            if "type" in search_params and not ContentType.is_valid(search_params["type"]):
+                valid_types = ", ".join(ContentType.get_valid_types())
+                return {"error": f"Invalid type: {search_params['type']}. Valid types: {valid_types}"}
             
             # Execute search with remaining parameters as filters
             search_result = self.helper.search_content(
@@ -261,8 +311,8 @@ class ContentProcessor(BaseProcessor):
         - pagination_token: Token for retrieving the next page of results
         
         Examples:
-        - Query by workflow status: {"attribute": "rag_status", "value": "ENABLED"}
-        - Query by content type: {"attribute": "type", "value": "BOOK"}
+        - Query by workflow status: {"attribute": "rag_status", "value": WorkflowStatus.ENABLED.value}
+        - Query by content type: {"attribute": "type", "value": ContentType.BOOK.value}
         """
         try:
             require_keys(payload, ["attribute", "value"])
@@ -272,6 +322,21 @@ class ContentProcessor(BaseProcessor):
             value = payload["value"]
             limit = payload.get("limit")
             pagination_token = payload.get("pagination_token")
+            
+            # Validate status values if applicable
+            if attribute == "status" and not ContentStatus.is_valid(value):
+                valid_statuses = ", ".join(ContentStatus.get_valid_statuses())
+                return {"error": f"Invalid status value: {value}. Valid statuses: {valid_statuses}"}
+                
+            # Validate workflow status values if applicable
+            if attribute in ["rag_status", "training_status", "licensing_status"] and not WorkflowStatus.is_valid(value):
+                valid_statuses = ", ".join(WorkflowStatus.get_valid_statuses())
+                return {"error": f"Invalid {attribute} value: {value}. Valid values: {valid_statuses}"}
+                
+            # Validate type value if applicable
+            if attribute == "type" and not ContentType.is_valid(value):
+                valid_types = ", ".join(ContentType.get_valid_types())
+                return {"error": f"Invalid type value: {value}. Valid types: {valid_types}"}
             
             # Perform the query
             result = self.helper.query_by_attribute(

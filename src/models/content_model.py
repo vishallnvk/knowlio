@@ -2,6 +2,9 @@ from datetime import datetime
 from typing import Dict, List, Optional, Any
 import uuid
 
+from enums.content_type import ContentType
+from enums.content_status import ContentStatus, WorkflowStatus
+
 
 class ContentModel:
     """
@@ -13,14 +16,14 @@ class ContentModel:
     Status fields can be flexibly updated to support various workflows (RAG, training, licensing, etc.)
     """
     
-    # Valid content types
-    VALID_TYPES = ["BOOK", "VIDEO", "AUDIO", "DATASET", "TEXT"]
+    # Valid content types - Use enum values
+    VALID_TYPES = ContentType.get_valid_types()
     
-    # Valid status values
-    VALID_STATUSES = ["DRAFT", "ACTIVE", "ARCHIVED"]
+    # Valid status values - Use enum values
+    VALID_STATUSES = ContentStatus.get_valid_statuses()
     
-    # Valid workflow status values
-    VALID_WORKFLOW_STATUSES = ["ENABLED", "DISABLED"]
+    # Valid workflow status values - Use enum values
+    VALID_WORKFLOW_STATUSES = WorkflowStatus.get_valid_statuses()
     
     def __init__(self, content_data: Dict):
         # Core properties
@@ -35,7 +38,7 @@ class ContentModel:
         self.metadata: Dict = content_data.get("metadata", {})
         
         # Core status
-        self.status: str = content_data.get("status", "DRAFT")
+        self.status: str = content_data.get("status", ContentStatus.DRAFT.value)
         
         # File storage
         self.file_key: Optional[str] = content_data.get("file_key")
@@ -45,23 +48,23 @@ class ContentModel:
         self.updated_at: Optional[str] = content_data.get("updated_at")
         
         # Workflow statuses - initialize with default values if not provided
-        self.rag_status: str = content_data.get("rag_status", "DISABLED")
-        self.training_status: str = content_data.get("training_status", "DISABLED")
-        self.licensing_status: str = content_data.get("licensing_status", "DISABLED")
+        self.rag_status: str = content_data.get("rag_status", WorkflowStatus.DISABLED.value)
+        self.training_status: str = content_data.get("training_status", WorkflowStatus.DISABLED.value)
+        self.licensing_status: str = content_data.get("licensing_status", WorkflowStatus.DISABLED.value)
         
     def _validate_type(self, content_type: str) -> str:
         """Validate and normalize content type"""
         normalized_type = content_type.upper()
-        if normalized_type not in self.VALID_TYPES:
-            raise ValueError(f"Invalid content type: {content_type}. Valid types: {', '.join(self.VALID_TYPES)}")
+        if not ContentType.is_valid(normalized_type):
+            raise ValueError(f"Invalid content type: {content_type}. Valid types: {', '.join(ContentType.get_valid_types())}")
         return normalized_type
     
     @classmethod
     def validate_status(cls, status: str) -> bool:
         """Validate content status value"""
-        return status in cls.VALID_STATUSES
+        return ContentStatus.is_valid(status)
     
     @classmethod
     def validate_workflow_status(cls, status: str) -> bool:
         """Validate workflow status value"""
-        return status in cls.VALID_WORKFLOW_STATUSES
+        return WorkflowStatus.is_valid(status)

@@ -5,11 +5,14 @@ Provides methods to fetch and filter book details by ISBN.
 
 import urllib.request
 import urllib.error
+import urllib.parse
 import json
+import time
 from typing import Dict, List, Optional, Any
 
 from helpers.common_helper.logger_helper import LoggerHelper
 from helpers.common_helper.common_helper import Retry
+from models.book_model import BookModel
 from config.google_books_api_config import (
     GOOGLE_BOOKS_API_BASE_URL,
     DEFAULT_FIELDS,
@@ -52,8 +55,13 @@ class GoogleBooksHelper:
             volume_info = data['items'][0]['volumeInfo']
             logger.debug(f"Found book: {volume_info.get('title', 'Unknown')}")
             
-            # Process and return the full book data
-            return self._process_book_data(volume_info, isbn)
+            # Use the BookModel to process and return the full book data
+            book = BookModel({
+                'volumeInfo': volume_info,
+                'isbn': isbn,
+                'id': data['items'][0].get('id')
+            })
+            return book.to_dict()
             
         except urllib.error.URLError as e:
             logger.error(f"API request error: {str(e)}")
@@ -94,12 +102,9 @@ class GoogleBooksHelper:
         # Ensure mandatory fields are always included
         fields_to_include = set(fields).union(set(MANDATORY_FIELDS))
         
-        # Filter the book data to only include requested fields
-        filtered_data = {
-            field: book_data.get(field) 
-            for field in fields_to_include 
-            if field in book_data
-        }
+        # Create a BookModel and use its filtering method
+        book_model = BookModel(book_data)
+        filtered_data = book_model.filter_fields(fields_to_include)
         
         logger.debug(f"Filtered book data to fields: {list(filtered_data.keys())}")
         return filtered_data
@@ -134,11 +139,9 @@ class GoogleBooksHelper:
         # Filter each book to include only the requested fields
         filtered_books = []
         for book in result["books"]:
-            filtered_book = {
-                field: book.get(field) 
-                for field in fields_to_include 
-                if field in book
-            }
+            # Create a BookModel and use its filtering method
+            book_model = BookModel(book)
+            filtered_book = book_model.filter_fields(fields_to_include)
             filtered_books.append(filtered_book)
         
         # Return the result with filtered books
@@ -209,22 +212,14 @@ class GoogleBooksHelper:
                             elif id_item.get('type') == 'ISBN_10':
                                 isbn = id_item.get('identifier')
                         
-                        # Create a processed book entry
-                        book_data = {
-                            "title": volume_info.get('title', 'Unknown Title'),
-                            "authors": volume_info.get('authors', ['Unknown Author']),
-                            "publisher": volume_info.get('publisher'),
-                            "publishedDate": volume_info.get('publishedDate'),
-                            "description": volume_info.get('description'),
-                            "isbn": isbn,
-                            "pageCount": volume_info.get('pageCount'),
-                            "categories": volume_info.get('categories', []),
-                            "imageLinks": volume_info.get('imageLinks'),
-                            "language": volume_info.get('language'),
-                            "id": item.get('id')
-                        }
+                        # Create a book model and add its dictionary representation to results
+                        book_model = BookModel({
+                            'volumeInfo': volume_info,
+                            'isbn': isbn,
+                            'id': item.get('id')
+                        })
                         
-                        all_books.append(book_data)
+                        all_books.append(book_model.to_dict())
                 
                 # Update for next page
                 start_index += len(items)
@@ -240,7 +235,6 @@ class GoogleBooksHelper:
                     
                 # To avoid overwhelming the API, add a small delay between requests
                 # In production, you might want to implement a more sophisticated rate limiter
-                import time
                 time.sleep(0.2)
             
             logger.info(f"Found {len(all_books)} books by author: {author_name}")
@@ -260,39 +254,3 @@ class GoogleBooksHelper:
         except Exception as e:
             logger.error(f"Unexpected error: {str(e)}")
             return {"error": f"An unexpected error occurred: {str(e)}"}
-
-    def _process_book_data(self, volume_info: Dict[str, Any], isbn: str) -> Dict[str, Any]:
-        """
-        Process the Google Books API response to extract and normalize book data.
-        
-        Args:
-            volume_info: The volumeInfo section from the Google Books API response
-            isbn: The ISBN used in the original query
-            
-        Returns:
-            Dict containing the processed book data
-        """
-        processed_data = {}
-        
-        # Process each field according to mappings
-        for our_field, google_field in FIELD_MAPPINGS.items():
-            # Handle ISBN specially
-            if our_field == "isbn":
-                # Extract ISBN from industry identifiers
-                industry_ids = volume_info.get('industryIdentifiers', [])
-                # Try to find ISBN-13 first, then ISBN-10
-                isbn_value = isbn  # Default to the provided ISBN
-                for id_item in industry_ids:
-                    if id_item.get('type') == 'ISBN_13':
-                        isbn_value = id_item.get('identifier')
-                        break
-                    elif id_item.get('type') == 'ISBN_10':
-                        isbn_value = id_item.get('identifier')
-                processed_data[our_field] = isbn_value
-            else:
-                # For all other fields, directly map from Google's response
-                processed_data[our_field] = volume_info.get(google_field)
-                
-        # Add any additional processing or formatting here if needed
-        
-        return processed_data

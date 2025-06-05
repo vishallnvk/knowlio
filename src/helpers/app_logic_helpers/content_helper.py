@@ -9,6 +9,7 @@ from helpers.aws_service_helpers.dynamodb_helper import DynamoDBHelper
 from helpers.common_helper.logger_helper import LoggerHelper
 from helpers.common_helper.common_helper import Retry
 from models.content_model import ContentModel
+from enums.content_status import ContentStatus, WorkflowStatus
 
 logger = LoggerHelper(__name__).get_logger()
 
@@ -66,7 +67,7 @@ class ContentHelper:
         # Set updated_at timestamp
         updates = {
             "file_key": file_key, 
-            "status": "ACTIVE",
+            "status": ContentStatus.ACTIVE.value,
             "updated_at": datetime.utcnow().isoformat()
         }
         
@@ -221,7 +222,7 @@ class ContentHelper:
             Updated content item
         """
         logger.info("Archiving content_id: %s", content_id)
-        return self.update_content_metadata(content_id, {"status": "ARCHIVED"})
+        return self.update_content_metadata(content_id, {"status": ContentStatus.ARCHIVED.value})
         
     @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
     def search_content(self, search_params: Dict, limit: int = None, 
