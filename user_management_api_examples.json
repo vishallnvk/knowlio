@@ -1,0 +1,394 @@
+{
+  "examples": [
+    {
+      "title": "Register User - Publisher",
+      "description": "Register a new publisher user with metadata",
+      "request": {
+        "method": "POST",
+        "path": "/users/register",
+        "body": {
+          "processor_name": "user",
+          "action": "register_user",
+          "payload": {
+            "email": "publisher@example.com",
+            "role": "PUBLISHER",
+            "name": "Test Publisher",
+            "organization": "Publishing Co",
+            "auth_provider": "GOOGLE",
+            "metadata": {
+              "legal_entity": "Publishing Company Inc.",
+              "content_types": ["books", "videos"],
+              "website": "https://publisher.example.com",
+              "region": "NA"
+            }
+          }
+        }
+      },
+      "response": {
+        "message": "User registered successfully",
+        "user_id": "370c9000-011f-47b5-b905-00d94d42868d"
+      }
+    },
+    {
+      "title": "Register User - Consumer",
+      "description": "Register a new consumer user with metadata",
+      "request": {
+        "method": "POST",
+        "path": "/users/register",
+        "body": {
+          "processor_name": "user",
+          "action": "register_user",
+          "payload": {
+            "email": "consumer@example.com",
+            "role": "CONSUMER",
+            "name": "Test Consumer",
+            "organization": "Consumer Corp",
+            "auth_provider": "COGNITO",
+            "metadata": {
+              "license_tier": "enterprise",
+              "api_quota": 50000,
+              "use_case": "LLM training",
+              "integration_level": "FULL"
+            }
+          }
+        }
+      },
+      "response": {
+        "message": "User registered successfully",
+        "user_id": "481d7000-022f-36c5-a904-10e93d53977f"
+      }
+    },
+    {
+      "title": "Get User Profile",
+      "description": "Fetch a user profile by ID",
+      "request": {
+        "method": "GET",
+        "path": "/users/{user_id}",
+        "path_parameters": {
+          "user_id": "370c9000-011f-47b5-b905-00d94d42868d"
+        },
+        "body": {
+          "processor_name": "user",
+          "action": "get_user_profile",
+          "payload": {
+            "user_id": "370c9000-011f-47b5-b905-00d94d42868d"
+          }
+        }
+      },
+      "response": {
+        "user_id": "370c9000-011f-47b5-b905-00d94d42868d",
+        "email": "publisher@example.com",
+        "role": "PUBLISHER",
+        "name": "Test Publisher",
+        "organization": "Publishing Co",
+        "auth_provider": "GOOGLE",
+        "created_at": "2025-06-04T12:45:00.000Z",
+        "metadata": {
+          "legal_entity": "Publishing Company Inc.",
+          "content_types": ["books", "videos"],
+          "website": "https://publisher.example.com",
+          "region": "NA"
+        }
+      }
+    },
+    {
+      "title": "Update User Profile",
+      "description": "Update user profile information",
+      "request": {
+        "method": "PUT",
+        "path": "/users/{user_id}",
+        "path_parameters": {
+          "user_id": "370c9000-011f-47b5-b905-00d94d42868d"
+        },
+        "body": {
+          "processor_name": "user",
+          "action": "update_user_profile",
+          "payload": {
+            "user_id": "370c9000-011f-47b5-b905-00d94d42868d",
+            "updates": {
+              "name": "Updated Publisher Name",
+              "metadata": {
+                "legal_entity": "Publishing Company Inc. LLC",
+                "content_types": ["books", "videos", "audio"],
+                "website": "https://publisher-updated.example.com",
+                "region": "EU"
+              }
+            }
+          }
+        }
+      },
+      "response": {
+        "user_id": "370c9000-011f-47b5-b905-00d94d42868d",
+        "email": "publisher@example.com",
+        "role": "PUBLISHER",
+        "name": "Updated Publisher Name",
+        "organization": "Publishing Co",
+        "auth_provider": "GOOGLE",
+        "created_at": "2025-06-04T12:45:00.000Z",
+        "metadata": {
+          "legal_entity": "Publishing Company Inc. LLC",
+          "content_types": ["books", "videos", "audio"],
+          "website": "https://publisher-updated.example.com",
+          "region": "EU"
+        }
+      }
+    },
+    {
+      "title": "List Users By Role with Pagination",
+      "description": "List users by role with pagination",
+      "request": {
+        "method": "GET",
+        "path": "/users",
+        "query_parameters": {
+          "role": "PUBLISHER",
+          "limit": "5"
+        },
+        "body": {
+          "processor_name": "user",
+          "action": "list_users_by_role",
+          "payload": {
+            "role": "PUBLISHER",
+            "limit": 5
+          }
+        }
+      },
+      "response": {
+        "users": [
+          {
+            "user_id": "370c9000-011f-47b5-b905-00d94d42868d",
+            "email": "publisher@example.com",
+            "role": "PUBLISHER",
+            "name": "Updated Publisher Name",
+            "organization": "Publishing Co",
+            "auth_provider": "GOOGLE",
+            "created_at": "2025-06-04T12:45:00.000Z"
+          },
+          {
+            "user_id": "590a2100-033e-49d8-b801-20c84e54755b",
+            "email": "publisher2@example.com",
+            "role": "PUBLISHER",
+            "name": "Another Publisher",
+            "organization": "Publishing Group",
+            "auth_provider": "COGNITO",
+            "created_at": "2025-06-05T09:22:15.000Z"
+          }
+        ],
+        "count": 2,
+        "total_scanned": 2
+      }
+    },
+    {
+      "title": "List Users By Role with Pagination (Next Page)",
+      "description": "Fetch next page of users by role",
+      "request": {
+        "method": "GET",
+        "path": "/users",
+        "query_parameters": {
+          "role": "PUBLISHER",
+          "limit": "5",
+          "pagination_token": "eyJsYXN0X2V2YWx1YXRlZF9rZXkiOnsiY29udGVudF9pZCI6ImFiYzEyMyJ9fQ=="
+        },
+        "body": {
+          "processor_name": "user",
+          "action": "list_users_by_role",
+          "payload": {
+            "role": "PUBLISHER",
+            "limit": 5,
+            "pagination_token": "eyJsYXN0X2V2YWx1YXRlZF9rZXkiOnsiY29udGVudF9pZCI6ImFiYzEyMyJ9fQ=="
+          }
+        }
+      },
+      "response": {
+        "users": [
+          {
+            "user_id": "672b4300-045f-58e9-c702-30d95f65866c",
+            "email": "publisher3@example.com",
+            "role": "PUBLISHER",
+            "name": "Third Publisher",
+            "organization": "Publishing LLC",
+            "auth_provider": "GOOGLE",
+            "created_at": "2025-06-06T14:33:20.000Z"
+          }
+        ],
+        "count": 1,
+        "total_scanned": 1,
+        "pagination": {
+          "has_more": false
+        }
+      }
+    },
+    {
+      "title": "Search Users",
+      "description": "Search users by various criteria",
+      "request": {
+        "method": "POST",
+        "path": "/users/search",
+        "body": {
+          "processor_name": "user",
+          "action": "search_users",
+          "payload": {
+            "organization": "Corp",
+            "limit": 10
+          }
+        }
+      },
+      "response": {
+        "users": [
+          {
+            "user_id": "481d7000-022f-36c5-a904-10e93d53977f",
+            "email": "consumer@example.com",
+            "role": "CONSUMER",
+            "name": "Test Consumer",
+            "organization": "Consumer Corp",
+            "auth_provider": "COGNITO",
+            "created_at": "2025-06-04T12:45:00.000Z",
+            "metadata": {
+              "license_tier": "enterprise",
+              "api_quota": 50000,
+              "use_case": "LLM training",
+              "integration_level": "FULL"
+            }
+          }
+        ],
+        "count": 1,
+        "total_scanned": 3
+      }
+    },
+    {
+      "title": "Search Users with Nested Metadata Field",
+      "description": "Search users by nested metadata field",
+      "request": {
+        "method": "POST",
+        "path": "/users/search",
+        "body": {
+          "processor_name": "user",
+          "action": "search_users",
+          "payload": {
+            "metadata.license_tier": "enterprise",
+            "limit": 10
+          }
+        }
+      },
+      "response": {
+        "users": [
+          {
+            "user_id": "481d7000-022f-36c5-a904-10e93d53977f",
+            "email": "consumer@example.com",
+            "role": "CONSUMER",
+            "name": "Test Consumer",
+            "organization": "Consumer Corp",
+            "auth_provider": "COGNITO",
+            "created_at": "2025-06-04T12:45:00.000Z",
+            "metadata": {
+              "license_tier": "enterprise",
+              "api_quota": 50000,
+              "use_case": "LLM training",
+              "integration_level": "FULL"
+            }
+          }
+        ],
+        "count": 1,
+        "total_scanned": 3
+      }
+    },
+    {
+      "title": "Admin Update User Field",
+      "description": "Admin-only update of any user field",
+      "request": {
+        "method": "PATCH",
+        "path": "/users/{user_id}/admin",
+        "path_parameters": {
+          "user_id": "481d7000-022f-36c5-a904-10e93d53977f"
+        },
+        "body": {
+          "processor_name": "user",
+          "action": "admin_update_user",
+          "payload": {
+            "user_id": "481d7000-022f-36c5-a904-10e93d53977f",
+            "field": "role",
+            "value": "ADMIN"
+          }
+        }
+      },
+      "response": {
+        "user_id": "481d7000-022f-36c5-a904-10e93d53977f",
+        "email": "consumer@example.com",
+        "role": "ADMIN",
+        "name": "Test Consumer",
+        "organization": "Consumer Corp",
+        "auth_provider": "COGNITO",
+        "created_at": "2025-06-04T12:45:00.000Z",
+        "metadata": {
+          "license_tier": "enterprise",
+          "api_quota": 50000,
+          "use_case": "LLM training",
+          "integration_level": "FULL"
+        }
+      }
+    },
+    {
+      "title": "Invalid Email Format",
+      "description": "Error response for invalid email format",
+      "request": {
+        "method": "POST",
+        "path": "/users/register",
+        "body": {
+          "processor_name": "user",
+          "action": "register_user",
+          "payload": {
+            "email": "not-an-email",
+            "role": "CONSUMER",
+            "name": "Invalid User"
+          }
+        }
+      },
+      "response": {
+        "error": "Invalid email format: not-an-email"
+      }
+    },
+    {
+      "title": "Invalid Role",
+      "description": "Error response for invalid role",
+      "request": {
+        "method": "POST",
+        "path": "/users/register",
+        "body": {
+          "processor_name": "user",
+          "action": "register_user",
+          "payload": {
+            "email": "valid@example.com",
+            "role": "INVALID_ROLE",
+            "name": "Invalid Role User"
+          }
+        }
+      },
+      "response": {
+        "error": "Invalid role: INVALID_ROLE. Valid roles: ADMIN, PUBLISHER, CONSUMER"
+      }
+    },
+    {
+      "title": "Unauthorized Admin Action",
+      "description": "Error response for unauthorized admin action",
+      "request": {
+        "method": "PATCH",
+        "path": "/users/{user_id}/admin",
+        "path_parameters": {
+          "user_id": "481d7000-022f-36c5-a904-10e93d53977f"
+        },
+        "body": {
+          "processor_name": "user",
+          "action": "admin_update_user",
+          "payload": {
+            "user_id": "481d7000-022f-36c5-a904-10e93d53977f",
+            "field": "role",
+            "value": "ADMIN"
+          }
+        }
+      },
+      "response": {
+        "error": "Not authorized to perform this action",
+        "status_code": 403
+      }
+    }
+  ]
+}

@@ -55,8 +55,23 @@ class KnowlioApiRoutes:
                 path="users",
                 processor_name="user",
                 action="list_users_by_role",
-                description="List users by role",
-                query_parameters=["role"]
+                description="List users by role with pagination",
+                query_parameters=["role", "limit", "pagination_token"]
+            ),
+            ApiRoute(
+                method="POST",
+                path="users/search",
+                processor_name="user",
+                action="search_users",
+                description="Search users with flexible criteria",
+            ),
+            ApiRoute(
+                method="PATCH",
+                path="users/{user_id}/admin",
+                processor_name="user",
+                action="admin_update_user",
+                description="Admin-only generic field update",
+                path_parameters=["user_id"]
             ),
             
             # Content Management Routes
@@ -84,6 +99,14 @@ class KnowlioApiRoutes:
                 path_parameters=["content_id"]
             ),
             ApiRoute(
+                method="PATCH",
+                path="content/{content_id}/attribute/{attribute}",
+                processor_name="content",
+                action="update_content_attribute",
+                description="Update a single content attribute",
+                path_parameters=["content_id", "attribute"]
+            ),
+            ApiRoute(
                 method="GET",
                 path="content",
                 processor_name="content",
@@ -105,6 +128,15 @@ class KnowlioApiRoutes:
                 action="archive_content",
                 description="Archive content",
                 path_parameters=["content_id"]
+            ),
+            ApiRoute(
+                method="GET",
+                path="content/query/{attribute}/{value}",
+                processor_name="content",
+                action="query_by_attribute",
+                description="Query content by any attribute",
+                path_parameters=["attribute", "value"],
+                query_parameters=["limit", "pagination_token"]
             ),
             
             # License Management Routes

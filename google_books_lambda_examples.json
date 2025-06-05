@@ -1,0 +1,221 @@
+{
+  "example1": {
+    "description": "Get complete book details by ISBN",
+    "lambda_event": {
+      "processor_name": "google_books",
+      "action": "get_book_details",
+      "payload": {
+        "isbn": "9780132350884"
+      }
+    },
+    "expected_response": {
+      "statusCode": 200,
+      "body": {
+        "isbn": "9780132350884",
+        "title": "Clean Code: A Handbook of Agile Software Craftsmanship",
+        "authors": [
+          "Robert C. Martin"
+        ],
+        "publisher": "Pearson Education",
+        "publishedDate": "2008-08-01",
+        "description": "Even bad code can function. But if code isn't clean, it can bring a development organization to its knees...",
+        "pageCount": 464,
+        "categories": [
+          "Computers",
+          "Software Development"
+        ],
+        "imageLinks": {
+          "smallThumbnail": "http://books.google.com/books/content?id=...",
+          "thumbnail": "http://books.google.com/books/content?id=..."
+        },
+        "language": "en"
+      }
+    }
+  },
+  "example2": {
+    "description": "Get filtered book details by ISBN",
+    "lambda_event": {
+      "processor_name": "google_books",
+      "action": "get_book_details_filtered",
+      "payload": {
+        "isbn": "9780201633610",
+        "fields": ["title", "authors", "publisher", "publishedDate"]
+      }
+    },
+    "expected_response": {
+      "statusCode": 200,
+      "body": {
+        "isbn": "9780201633610",
+        "title": "Design Patterns: Elements of Reusable Object-Oriented Software",
+        "authors": [
+          "Erich Gamma",
+          "Richard Helm", 
+          "Ralph Johnson",
+          "John Vlissides"
+        ],
+        "publisher": "Addison-Wesley Professional",
+        "publishedDate": "1994-10-31"
+      }
+    }
+  },
+  "example3": {
+    "description": "Get book details with only mandatory fields",
+    "lambda_event": {
+      "processor_name": "google_books",
+      "action": "get_book_details_filtered",
+      "payload": {
+        "isbn": "9781449331818",
+        "fields": []
+      }
+    },
+    "expected_response": {
+      "statusCode": 200,
+      "body": {
+        "isbn": "9781449331818",
+        "title": "Learning JavaScript Design Patterns",
+        "authors": [
+          "Addy Osmani"
+        ]
+      }
+    }
+  },
+  "example4": {
+    "description": "Get all books by a specific author",
+    "lambda_event": {
+      "processor_name": "google_books",
+      "action": "get_books_by_author",
+      "payload": {
+        "author_name": "J.K. Rowling"
+      }
+    },
+    "expected_response": {
+      "statusCode": 200,
+      "body": {
+        "books": [
+          {
+            "title": "Harry Potter and the Sorcerer's Stone",
+            "authors": ["J.K. Rowling"],
+            "publisher": "Scholastic Inc.",
+            "publishedDate": "1998-10-01",
+            "description": "A brief excerpt of the description...",
+            "isbn": "9780590353427",
+            "pageCount": 309,
+            "categories": ["Juvenile Fiction"],
+            "imageLinks": {
+              "smallThumbnail": "http://books.google.com/books/content?id=wrOQLV6xB-wC&printsec=frontcover&img=1&zoom=5&edge=curl&source=gbs_api",
+              "thumbnail": "http://books.google.com/books/content?id=wrOQLV6xB-wC&printsec=frontcover&img=1&zoom=1&edge=curl&source=gbs_api"
+            },
+            "language": "en",
+            "id": "wrOQLV6xB-wC"
+          },
+          {
+            "title": "Harry Potter and the Chamber of Secrets",
+            "authors": ["J.K. Rowling"],
+            "publisher": "Scholastic Inc.",
+            "publishedDate": "1999-06",
+            "description": "A brief excerpt of the description...",
+            "isbn": "9780439064873",
+            "pageCount": 341,
+            "categories": ["Juvenile Fiction"],
+            "language": "en",
+            "id": "5iTebBW-w7QC"
+          }
+        ],
+        "total_found": 25,
+        "author": "J.K. Rowling",
+        "truncated": false
+      }
+    }
+  },
+  "example5": {
+    "description": "Get books by author with limit",
+    "lambda_event": {
+      "processor_name": "google_books",
+      "action": "get_books_by_author",
+      "payload": {
+        "author_name": "George R.R. Martin",
+        "max_results": 10
+      }
+    },
+    "expected_response": {
+      "statusCode": 200,
+      "body": {
+        "books": [
+          {
+            "title": "A Game of Thrones",
+            "authors": ["George R.R. Martin"],
+            "publisher": "Bantam",
+            "isbn": "9780553103540",
+            "categories": ["Fiction"]
+          },
+          "... additional books truncated for brevity ..."
+        ],
+        "total_found": 10,
+        "author": "George R.R. Martin",
+        "truncated": true
+      }
+    }
+  },
+  "example6": {
+    "description": "Get filtered book details for books by author",
+    "lambda_event": {
+      "processor_name": "google_books",
+      "action": "get_books_by_author_filtered",
+      "payload": {
+        "author_name": "J.K. Rowling",
+        "fields": ["title", "publishedDate", "isbn"]
+      }
+    },
+    "expected_response": {
+      "statusCode": 200,
+      "body": {
+        "books": [
+          {
+            "title": "Harry Potter and the Sorcerer's Stone",
+            "authors": ["J.K. Rowling"],
+            "publishedDate": "1998-10-01",
+            "isbn": "9780590353427"
+          },
+          {
+            "title": "Harry Potter and the Chamber of Secrets",
+            "authors": ["J.K. Rowling"],
+            "publishedDate": "1999-06",
+            "isbn": "9780439064873"
+          },
+          "... additional books truncated for brevity ..."
+        ],
+        "total_found": 25,
+        "author": "J.K. Rowling",
+        "truncated": false
+      }
+    }
+  },
+  "example7": {
+    "description": "Get filtered book details for books by author with limit",
+    "lambda_event": {
+      "processor_name": "google_books",
+      "action": "get_books_by_author_filtered",
+      "payload": {
+        "author_name": "George R.R. Martin",
+        "fields": ["title", "publishedDate"],
+        "max_results": 5
+      }
+    },
+    "expected_response": {
+      "statusCode": 200,
+      "body": {
+        "books": [
+          {
+            "title": "A Game of Thrones",
+            "authors": ["George R.R. Martin"],
+            "publishedDate": "1996-08-01"
+          },
+          "... additional books truncated for brevity ..."
+        ],
+        "total_found": 5,
+        "author": "George R.R. Martin",
+        "truncated": true
+      }
+    }
+  }
+}
