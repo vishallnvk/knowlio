@@ -209,6 +209,66 @@ class ContentHelper:
         
         # Apply standard pagination encoding
         return self._encode_pagination_result(result)
+        
+    @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
+    def list_content_by_publisher_and_type(self, publisher_id: str, content_type: str, 
+                                         limit: int = None, pagination_token: str = None) -> Dict:
+        """
+        List content by publisher and content type with pagination support
+        
+        Args:
+            publisher_id: The publisher ID to filter by
+            content_type: The content type to filter by (from ContentType enum)
+            limit: Optional maximum number of items to return
+            pagination_token: Optional pagination token from previous query
+            
+        Returns:
+            Dict containing items and pagination details
+        """
+        logger.info("Listing content for publisher_id: %s and type: %s (limit: %s)", 
+                   publisher_id, content_type, limit)
+        
+        # We'll first query by publisher ID, then filter by content type
+        # This works because publisher_id is indexed, but the combination isn't
+        
+        # Start with querying by publisher ID
+        search_params = {"publisher_id": publisher_id}
+        
+        # Get content by publisher
+        last_evaluated_key = self._decode_pagination_token(pagination_token)
+        
+        # We'll need to get more items than requested limit since we'll filter some out
+        adjusted_limit = None if limit is None else limit * 3  # Get more items to account for filtering
+        
+        # Query items by publisher_id
+        result = self.db.query_items(
+            key_name="publisher_id", 
+            key_value=publisher_id,
+            limit=adjusted_limit,
+            last_evaluated_key=last_evaluated_key
+        )
+        
+        # Filter results by content type
+        filtered_items = []
+        for item in result.get("items", []):
+            if item.get("type") == content_type:
+                filtered_items.append(item)
+                if limit is not None and len(filtered_items) >= limit:
+                    break  # Stop once we have enough items
+        
+        # Prepare result with filtered items
+        filtered_result = {
+            "items": filtered_items,
+            "count": len(filtered_items)
+        }
+        
+        # Preserve pagination info if we haven't reached the limit
+        if limit is not None and len(filtered_items) < limit and "last_evaluated_key" in result:
+            filtered_result["last_evaluated_key"] = result["last_evaluated_key"]
+            filtered_result["has_more"] = True
+        
+        # Apply standard pagination encoding
+        return self._encode_pagination_result(filtered_result)
 
     @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
     def archive_content(self, content_id: str) -> Dict:

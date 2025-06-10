@@ -5,7 +5,16 @@ Business logic for setting up the Knowlio REST API using the generic API Gateway
 
 from typing import List
 from infrastructure.app_constructs.api_gateway_construct import ApiGatewayProps, RouteDefinition
-from infrastructure.config.api_routes import KnowlioApiRoutes
+import sys
+import os
+
+# Add src directory to path to access src/config/api_routes.py
+src_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "src")
+if src_dir not in sys.path:
+    sys.path.insert(0, src_dir)
+
+# Import from src/config directory
+from config.api_routes import KnowlioApiRoutes
 
 
 class KnowlioApiConfig:

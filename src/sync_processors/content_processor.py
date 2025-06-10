@@ -23,6 +23,7 @@ class ContentProcessor(BaseProcessor):
             "update_content_metadata": self._update_content_metadata,
             "update_content_attribute": self._update_content_attribute,
             "list_content_by_publisher": self._list_content_by_publisher,
+            "list_content_by_publisher_and_type": self._list_content_by_publisher_and_type,
             "archive_content": self._archive_content,
             "search_content": self._search_content,
             "query_by_attribute": self._query_by_attribute,
@@ -212,6 +213,60 @@ class ContentProcessor(BaseProcessor):
         except Exception as e:
             logger.error(f"Error listing content: {str(e)}")
             return {"error": f"Failed to list content: {str(e)}"}
+
+    def _list_content_by_publisher_and_type(self, payload: Dict) -> Dict:
+        """
+        List content by publisher and content type with pagination support.
+        
+        Required payload keys:
+        - publisher_id: ID of the publisher to list content for
+        - content_type: Content type to filter by (from ContentType enum)
+        
+        Optional payload keys:
+        - limit: Maximum number of items to return
+        - pagination_token: Token for retrieving the next page of results
+        """
+        try:
+            require_keys(payload, ["publisher_id", "content_type"])
+            
+            # Validate content_type parameter
+            content_type = payload["content_type"]
+            if not ContentType.is_valid(content_type):
+                valid_types = ", ".join(ContentType.get_valid_types())
+                return {"error": f"Invalid content_type: {content_type}. Valid types: {valid_types}"}
+            
+            # Extract pagination parameters if provided
+            limit = payload.get("limit")
+            pagination_token = payload.get("pagination_token")
+            
+            result = self.helper.list_content_by_publisher_and_type(
+                publisher_id=payload["publisher_id"],
+                content_type=content_type,
+                limit=limit,
+                pagination_token=pagination_token
+            )
+            
+            # Handle error case
+            if "error" in result:
+                return {"error": result["error"]}
+            
+            # Convert result structure to standardized format
+            response = {
+                "contents": result.get("items", []),
+                "count": result.get("count", 0)
+            }
+            
+            # Add pagination details if available
+            if "pagination_token" in result:
+                response["pagination"] = {
+                    "next_token": result["pagination_token"],
+                    "has_more": result.get("has_more", False)
+                }
+                
+            return response
+        except Exception as e:
+            logger.error(f"Error listing content by publisher and type: {str(e)}")
+            return {"error": f"Failed to list content by publisher and type: {str(e)}"}
 
     def _archive_content(self, payload: Dict) -> Dict:
         """
