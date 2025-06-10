@@ -1,9 +1,9 @@
-"""
+'''
 Stack for Amazon OpenSearch Serverless resources.
 
 This stack is separate from the main KnowlioStack to improve maintainability 
 and separation of concerns.
-"""
+
 
 from aws_cdk import (
     Stack,
@@ -78,3 +78,6 @@ class OpenSearchServerlessStack(Stack):
     def collection_arn(self) -> str:
         """Get the OpenSearch Serverless collection ARN."""
         return self.opensearch.collection_arn
+
+
+'''

@@ -26,9 +26,11 @@ class KnowlioStack(Stack):
         """
         super().__init__(scope, construct_id, **kwargs)
         
+        '''
         # Verify opensearch_stack is provided
         if not opensearch_stack:
             raise ValueError("opensearch_stack parameter is required")
+        '''
 
         # Create IAM Role for Lambda
         lambda_role = IamRole(
@@ -43,6 +45,8 @@ class KnowlioStack(Stack):
             description="Role for Lambda to access DynamoDB, CloudWatch, S3 and Lambda invoke"
         ).role
         
+                
+        """
         # Use the opensearch_stack resources instead of creating our own
         opensearch_collection_arn = opensearch_stack.collection_arn
         opensearch_collection_endpoint = opensearch_stack.collection_endpoint
@@ -58,7 +62,7 @@ class KnowlioStack(Stack):
         )
         
         lambda_role.add_to_policy(opensearch_policy)
-        
+
         # Create environment variables for Lambda to access OpenSearch Serverless
         opensearch_env = {
             "OPENSEARCH_ENDPOINT": opensearch_collection_endpoint,
@@ -67,6 +71,9 @@ class KnowlioStack(Stack):
             "OPENSEARCH_REGION": self.region,
             "OPENSEARCH_SERVERLESS": "true"  # Flag to indicate we're using serverless
         }
+        """
+        
+        opensearch_env = ""
 
         # Create Lambda using LambdaConstruct with OpenSearch environment variables
         lambda_props = LambdaFunctionConstructProps(
