@@ -7,9 +7,11 @@
 # To make changes, edit the source file and run sync_api_routes.py.
 # Last synchronized: 2025-06-10 08:36:14
 # 
-# NOTE: This file was manually edited on 2025-06-10 to remove the 
-# query_by_attribute route (GET content/query/{attribute}/{value}) 
-# as this functionality has been deprecated.
+# NOTE: This file was manually edited on 2025-06-10 to:
+# 1. Remove the query_by_attribute route (GET content/query/{attribute}/{value})
+#    as this functionality has been deprecated.
+# 2. Convert all GET routes to POST routes to prevent exposing parameters
+#    in URLs and to ensure proper parameter type handling.
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 """
@@ -49,11 +51,11 @@ class KnowlioApiRoutes:
                 description="Register a new user",
             ),
             ApiRoute(
-                method="GET",
+                method="POST",
                 path="users/{user_id}",
                 processor_name="user",
                 action="get_user_profile",
-                description="Get user profile by ID",
+                description="Get user profile by ID (POST)",
                 path_parameters=["user_id"]
             ),
             ApiRoute(
@@ -65,12 +67,11 @@ class KnowlioApiRoutes:
                 path_parameters=["user_id"]
             ),
             ApiRoute(
-                method="GET",
-                path="users",
+                method="POST",
+                path="users/list",
                 processor_name="user",
                 action="list_users_by_role",
-                description="List users by role with pagination",
-                query_parameters=["role", "limit", "pagination_token"]
+                description="List users by role with pagination (POST)",
             ),
             ApiRoute(
                 method="POST",
@@ -97,11 +98,11 @@ class KnowlioApiRoutes:
                 description="Upload content metadata",
             ),
             ApiRoute(
-                method="GET",
-                path="content/{content_id}",
+                method="POST",
+                path="content/{content_id}/get",
                 processor_name="content",
                 action="get_content_details",
-                description="Get content details by ID",
+                description="Get content details by ID (POST)",
                 path_parameters=["content_id"]
             ),
             ApiRoute(
@@ -121,20 +122,18 @@ class KnowlioApiRoutes:
                 path_parameters=["content_id", "attribute"]
             ),
             ApiRoute(
-                method="GET",
-                path="content",
+                method="POST",
+                path="content/list",
                 processor_name="content",
                 action="list_content_by_publisher",
-                description="List content by publisher with pagination",
-                query_parameters=["publisher_id", "limit", "pagination_token"]
+                description="List content by publisher with pagination (POST)",
             ),
             ApiRoute(
-                method="GET",
+                method="POST",
                 path="content/filter",
                 processor_name="content",
                 action="list_content_by_publisher_and_type",
-                description="List content by publisher and content type with pagination",
-                query_parameters=["publisher_id", "content_type", "limit", "pagination_token"]
+                description="List content by publisher and content type with pagination (POST)",
             ),
             ApiRoute(
                 method="POST",
@@ -168,27 +167,26 @@ class KnowlioApiRoutes:
                 description="Create a new license",
             ),
             ApiRoute(
-                method="GET",
-                path="licenses/{license_id}",
+                method="POST",
+                path="licenses/{license_id}/get",
                 processor_name="license",
                 action="get_license",
-                description="Get license by ID",
+                description="Get license by ID (POST)",
                 path_parameters=["license_id"]
             ),
             ApiRoute(
-                method="GET",
-                path="licenses",
+                method="POST",
+                path="licenses/list",
                 processor_name="license",
                 action="list_licenses_by_consumer",
-                description="List licenses by consumer",
-                query_parameters=["consumer_id"]
+                description="List licenses by consumer (POST)",
             ),
             ApiRoute(
-                method="GET",
-                path="licenses/content/{content_id}",
+                method="POST",
+                path="licenses/content/{content_id}/list",
                 processor_name="license",
                 action="list_licenses_by_content",
-                description="List licenses by content",
+                description="List licenses by content (POST)",
                 path_parameters=["content_id"]
             ),
             ApiRoute(
@@ -209,57 +207,54 @@ class KnowlioApiRoutes:
                 description="Log content access",
             ),
             ApiRoute(
-                method="GET",
-                path="analytics/content/{content_id}",
+                method="POST",
+                path="analytics/content/{content_id}/report",
                 processor_name="analytics",
                 action="get_usage_report_by_content",
-                description="Get usage report by content",
+                description="Get usage report by content (POST)",
                 path_parameters=["content_id"]
             ),
             ApiRoute(
-                method="GET",
-                path="analytics/consumer/{consumer_id}",
+                method="POST",
+                path="analytics/consumer/{consumer_id}/report",
                 processor_name="analytics",
                 action="get_usage_report_by_consumer",
-                description="Get usage report by consumer",
+                description="Get usage report by consumer (POST)",
                 path_parameters=["consumer_id"]
             ),
             
             # Google Books API Routes
             ApiRoute(
-                method="GET",
-                path="books/{isbn}",
+                method="POST",
+                path="books/{isbn}/details",
                 processor_name="google_books",
                 action="get_book_details",
-                description="Get complete book details by ISBN",
+                description="Get complete book details by ISBN (POST)",
                 path_parameters=["isbn"]
             ),
             ApiRoute(
-                method="GET",
+                method="POST",
                 path="books/{isbn}/filtered",
                 processor_name="google_books",
                 action="get_book_details_filtered",
-                description="Get filtered book details by ISBN",
-                path_parameters=["isbn"],
-                query_parameters=["fields"]
+                description="Get filtered book details by ISBN (POST)",
+                path_parameters=["isbn"]
             ),
             ApiRoute(
-                method="GET",
-                path="books/author/{author_name}",
+                method="POST",
+                path="books/author/{author_name}/search",
                 processor_name="google_books",
                 action="get_books_by_author",
-                description="Get all books by a specific author",
-                path_parameters=["author_name"],
-                query_parameters=["max_results"]
+                description="Get all books by a specific author (POST)",
+                path_parameters=["author_name"]
             ),
             ApiRoute(
-                method="GET",
+                method="POST",
                 path="books/author/{author_name}/filtered",
                 processor_name="google_books",
                 action="get_books_by_author_filtered",
-                description="Get filtered book details for all books by a specific author",
-                path_parameters=["author_name"],
-                query_parameters=["fields", "max_results"]
+                description="Get filtered book details for all books by a specific author (POST)",
+                path_parameters=["author_name"]
             ),
             
             # S3 Upload Routes
@@ -271,11 +266,11 @@ class KnowlioApiRoutes:
                 description="Generate a presigned URL for direct file upload to S3"
             ),
             ApiRoute(
-                method="GET",
+                method="POST",
                 path="uploads/download/{key}",
                 processor_name="s3_upload",
                 action="generate_presigned_download_url",
-                description="Generate a presigned URL for file download from S3",
+                description="Generate a presigned URL for file download from S3 (POST)",
                 path_parameters=["key"]
             ),
             
@@ -309,11 +304,11 @@ class KnowlioApiRoutes:
                 description="Abort a multipart upload and remove any uploaded parts"
             ),
             ApiRoute(
-                method="GET",
-                path="uploads/multipart/parts",
+                method="POST",
+                path="uploads/multipart/parts/list",
                 processor_name="s3_upload",
                 action="list_parts",
-                description="List all parts that have been uploaded for a specific multipart upload"
+                description="List all parts that have been uploaded for a specific multipart upload (POST)"
             ),
         ]
     

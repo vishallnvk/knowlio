@@ -39,7 +39,10 @@ class ContentProcessor(BaseProcessor):
         Returns:
             Error dictionary if validation fails, None if validation passes
         """
-        for status_field in WorkflowStatus.WORKFLOW_STATUS_FIELDS:
+        # Define the workflow status fields directly to avoid issues with the enum
+        status_fields = ["rag_status", "training_status", "licensing_status"]
+        
+        for status_field in status_fields:
             if status_field in params_dict and not WorkflowStatus.is_valid(params_dict[status_field]):
                 valid_statuses = ", ".join(WorkflowStatus.get_valid_statuses())
                 return {"error": f"Invalid {status_field}: {params_dict[status_field]}. Valid values: {valid_statuses}"}
@@ -175,7 +178,9 @@ class ContentProcessor(BaseProcessor):
                     pass
                     
             # Convert workflow status string values to enum values if present
-            for field in WorkflowStatus.WORKFLOW_STATUS_FIELDS:
+            # Use the direct list instead of the enum attribute to avoid iteration errors
+            status_fields = ["rag_status", "training_status", "licensing_status"]
+            for field in status_fields:
                 if field in payload["updates"]:
                     status = payload["updates"][field]
                     if isinstance(status, str) and WorkflowStatus.is_valid(status):
