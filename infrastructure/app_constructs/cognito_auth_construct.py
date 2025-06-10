@@ -50,6 +50,31 @@ class CognitoAuthConstruct(Construct):
             removal_policy=RemovalPolicy.DESTROY  # For development - change for production
         )
         
+        # Create User Groups
+        self.admin_group = cognito.CfnUserPoolGroup(
+            self, "AdminGroup",
+            user_pool_id=self.user_pool.user_pool_id,
+            group_name="Admin",
+            description="Administrator users with full access to all APIs",
+            precedence=1  # Lower number = higher priority
+        )
+        
+        self.publisher_group = cognito.CfnUserPoolGroup(
+            self, "PublisherGroup",
+            user_pool_id=self.user_pool.user_pool_id,
+            group_name="Publisher",
+            description="Publisher users with access to content management APIs",
+            precedence=2
+        )
+        
+        self.consumer_group = cognito.CfnUserPoolGroup(
+            self, "ConsumerGroup",
+            user_pool_id=self.user_pool.user_pool_id,
+            group_name="Consumer",
+            description="Consumer users with access to content consumption APIs",
+            precedence=3
+        )
+        
         # Get Google OAuth credentials from environment variables or parameters
         client_id = google_client_id or os.environ.get(AuthConfig.GOOGLE_IDP["client_id_env_var"])
         client_secret = google_client_secret or os.environ.get(AuthConfig.GOOGLE_IDP["client_secret_env_var"])
