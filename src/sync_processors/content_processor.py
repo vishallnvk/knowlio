@@ -29,6 +29,26 @@ class ContentProcessor(BaseProcessor):
             "query_by_attribute": self._query_by_attribute,
             "query_by_attributes": self._query_by_attributes,
         })
+        
+    def _add_pagination_to_response(self, result: Dict, response: Dict) -> Dict:
+        """
+        Add pagination details to response if available in the result.
+        
+        Args:
+            result: Result dictionary from helper method
+            response: Response dictionary being constructed for API
+            
+        Returns:
+            Updated response with pagination details added if available
+        """
+        # Add pagination details if available
+        if "pagination_token" in result:
+            response["pagination"] = {
+                "next_token": result["pagination_token"],
+                "has_more": result.get("has_more", False)
+            }
+                
+        return response
 
     def _upload_content_metadata(self, payload: Dict) -> Dict:
         """
@@ -203,12 +223,8 @@ class ContentProcessor(BaseProcessor):
                 "count": result.get("count", 0)
             }
             
-            # Add pagination details if available
-            if "pagination_token" in result:
-                response["pagination"] = {
-                    "next_token": result["pagination_token"],
-                    "has_more": result.get("has_more", False)
-                }
+            # Add pagination details using helper method
+            response = self._add_pagination_to_response(result, response)
                 
             return response
         except Exception as e:
@@ -257,12 +273,8 @@ class ContentProcessor(BaseProcessor):
                 "count": result.get("count", 0)
             }
             
-            # Add pagination details if available
-            if "pagination_token" in result:
-                response["pagination"] = {
-                    "next_token": result["pagination_token"],
-                    "has_more": result.get("has_more", False)
-                }
+            # Add pagination details using helper method
+            response = self._add_pagination_to_response(result, response)
                 
             return response
         except Exception as e:
@@ -342,12 +354,8 @@ class ContentProcessor(BaseProcessor):
                 "total_scanned": search_result.get("total_scanned", 0)
             }
             
-            # Add pagination details if available
-            if "pagination_token" in search_result:
-                response["pagination"] = {
-                    "next_token": search_result["pagination_token"],
-                    "has_more": search_result.get("has_more", False)
-                }
+            # Add pagination details using helper method
+            response = self._add_pagination_to_response(search_result, response)
                 
             return response
         except Exception as e:
@@ -413,12 +421,8 @@ class ContentProcessor(BaseProcessor):
                 "total_scanned": result.get("total_scanned", 0)
             }
             
-            # Add pagination details if available
-            if "pagination_token" in result:
-                response["pagination"] = {
-                    "next_token": result["pagination_token"],
-                    "has_more": result.get("has_more", False)
-                }
+            # Add pagination details using helper method
+            response = self._add_pagination_to_response(result, response)
                 
             return response
         except Exception as e:
@@ -496,12 +500,8 @@ class ContentProcessor(BaseProcessor):
                 "total_scanned": search_result.get("total_scanned", 0)
             }
             
-            # Add pagination details if available
-            if "pagination_token" in search_result:
-                response["pagination"] = {
-                    "next_token": search_result["pagination_token"],
-                    "has_more": search_result.get("has_more", False)
-                }
+            # Add pagination details using helper method
+            response = self._add_pagination_to_response(search_result, response)
                 
             return response
         except Exception as e:
