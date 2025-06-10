@@ -156,6 +156,13 @@ class KnowlioApiRoutes:
                 path_parameters=["attribute", "value"],
                 query_parameters=["limit", "pagination_token"]
             ),
+            ApiRoute(
+                method="POST",
+                path="content/query-attributes",
+                processor_name="content",
+                action="query_by_attributes",
+                description="Query content by multiple attributes simultaneously",
+            ),
             
             # License Management Routes
             ApiRoute(

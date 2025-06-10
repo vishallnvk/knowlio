@@ -27,6 +27,7 @@ class ContentProcessor(BaseProcessor):
             "archive_content": self._archive_content,
             "search_content": self._search_content,
             "query_by_attribute": self._query_by_attribute,
+            "query_by_attributes": self._query_by_attributes,
         })
 
     def _upload_content_metadata(self, payload: Dict) -> Dict:
@@ -423,3 +424,86 @@ class ContentProcessor(BaseProcessor):
         except Exception as e:
             logger.error(f"Error querying content: {str(e)}")
             return {"error": f"Failed to query content: {str(e)}"}
+            
+    def _query_by_attributes(self, payload: Dict) -> Dict:
+        """
+        Query content by multiple attributes simultaneously with pagination support.
+        
+        Required payload keys:
+        - attributes: Dictionary of attribute-value pairs to filter by
+        
+        Optional payload keys:
+        - limit: Maximum number of items to return
+        - pagination_token: Token for retrieving the next page of results
+        
+        Example payload:
+        {
+            "attributes": {
+                "publisher_id": "publisher-123",
+                "type": "BOOK",
+                "status": "ACTIVE"
+            },
+            "limit": 10,
+            "pagination_token": "base64encodedtoken"
+        }
+        """
+        try:
+            require_keys(payload, ["attributes"])
+            
+            # Make sure attributes is a dictionary
+            attributes = payload.get("attributes")
+            if not isinstance(attributes, dict):
+                return {"error": "The 'attributes' field must be a dictionary of attribute-value pairs"}
+                
+            # Extract pagination parameters if provided
+            limit = payload.get("limit")
+            pagination_token = payload.get("pagination_token")
+            
+            # Validate each attribute according to its type
+            search_params = attributes.copy()
+            
+            # Validate status parameter if provided
+            if "status" in search_params and not ContentStatus.is_valid(search_params["status"]):
+                valid_statuses = ", ".join(ContentStatus.get_valid_statuses())
+                return {"error": f"Invalid status: {search_params['status']}. Valid statuses: {valid_statuses}"}
+                
+            # Validate workflow status parameters if provided
+            for status_field in ["rag_status", "training_status", "licensing_status"]:
+                if status_field in search_params and not WorkflowStatus.is_valid(search_params[status_field]):
+                    valid_statuses = ", ".join(WorkflowStatus.get_valid_statuses())
+                    return {"error": f"Invalid {status_field}: {search_params[status_field]}. Valid values: {valid_statuses}"}
+                    
+            # Validate type parameter if provided
+            if "type" in search_params and not ContentType.is_valid(search_params["type"]):
+                valid_types = ", ".join(ContentType.get_valid_types())
+                return {"error": f"Invalid type: {search_params['type']}. Valid types: {valid_types}"}
+            
+            # Execute search with the provided attributes
+            search_result = self.helper.search_content(
+                search_params=search_params,
+                limit=limit,
+                pagination_token=pagination_token
+            )
+            
+            # Handle error case
+            if "error" in search_result:
+                return {"error": search_result["error"]}
+            
+            # Convert result structure to standardized format
+            response = {
+                "contents": search_result.get("items", []),
+                "count": search_result.get("count", 0),
+                "total_scanned": search_result.get("total_scanned", 0)
+            }
+            
+            # Add pagination details if available
+            if "pagination_token" in search_result:
+                response["pagination"] = {
+                    "next_token": search_result["pagination_token"],
+                    "has_more": search_result.get("has_more", False)
+                }
+                
+            return response
+        except Exception as e:
+            logger.error(f"Error querying content by attributes: {str(e)}")
+            return {"error": f"Failed to query content by attributes: {str(e)}"}
