@@ -34,6 +34,9 @@ class WorkflowStatus(Enum):
     ENABLED = "ENABLED"   # Processing is enabled for this content
     DISABLED = "DISABLED"  # Processing is disabled for this content
 
+    # Common workflow status field names used throughout the application
+    WORKFLOW_STATUS_FIELDS = ("rag_status", "training_status", "licensing_status")
+
     @classmethod
     def get_valid_statuses(cls) -> list:
         """Get a list of all valid workflow status values as strings"""

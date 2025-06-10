@@ -6,6 +6,10 @@
 # 
 # To make changes, edit the source file and run sync_api_routes.py.
 # Last synchronized: 2025-06-10 08:36:14
+# 
+# NOTE: This file was manually edited on 2025-06-10 to remove the 
+# query_by_attribute route (GET content/query/{attribute}/{value}) 
+# as this functionality has been deprecated.
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 """
@@ -146,15 +150,6 @@ class KnowlioApiRoutes:
                 action="archive_content",
                 description="Archive content",
                 path_parameters=["content_id"]
-            ),
-            ApiRoute(
-                method="GET",
-                path="content/query/{attribute}/{value}",
-                processor_name="content",
-                action="query_by_attribute",
-                description="Query content by any attribute",
-                path_parameters=["attribute", "value"],
-                query_parameters=["limit", "pagination_token"]
             ),
             ApiRoute(
                 method="POST",
