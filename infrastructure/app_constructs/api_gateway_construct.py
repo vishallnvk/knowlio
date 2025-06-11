@@ -46,6 +46,7 @@ class RouteDefinition:
     method: str
     path: str
     description: Optional[str] = None
+    auth_required: bool = False  # Default to no authentication for development
 
 
 class ApiGatewayConstruct(Construct):

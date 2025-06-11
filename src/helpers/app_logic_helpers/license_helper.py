@@ -2,7 +2,7 @@ import uuid
 import json
 import base64
 from datetime import datetime
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Any
 
 import botocore.exceptions
 from helpers.aws_service_helpers.dynamodb_helper import DynamoDBHelper
@@ -50,62 +50,180 @@ class LicenseHelper:
         return self.db.get_item({"license_id": license_id})
 
     @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
-    def list_licenses_by_consumer(self, consumer_id: str, limit: int = None, pagination_token: str = None) -> Dict:
+    def search_licenses(self, search_params: Dict, limit: int = None, pagination_token: str = None) -> Dict:
         """
-        List licenses by consumer with pagination.
+        Search licenses based on provided parameters with pagination support.
+        Unified replacement for list_licenses_by_consumer and list_licenses_by_content.
         
         Args:
-            consumer_id: ID of the consumer to list licenses for
-            limit: Maximum number of items to return
-            pagination_token: Token for pagination
+            search_params: Dictionary of search parameters, which can include:
+                - consumer_id: Filter by consumer
+                - content_id: Filter by content
+                - publisher_id: Filter by publisher
+                - status: License status (ACTIVE, REVOKED)
+                - Any license fields to match
+            limit: Optional maximum number of items to return
+            pagination_token: Optional pagination token from previous query
+                
+        Returns:
+            Dict containing matching license items and pagination details
+        """
+        logger.info("Searching licenses with parameters: %s (limit: %s)", search_params, limit)
+        
+        # Make a copy of search params to avoid modifying the original
+        search_params = search_params.copy()
+        
+        # Convert pagination token from string to dict if provided
+        last_evaluated_key = self._decode_pagination_token(pagination_token)
+        
+        # Use the most efficient query method based on parameters
+        base_result = self._get_base_query_result(search_params, limit, last_evaluated_key)
+        
+        # Apply filters based on provided search parameters
+        filtered_items = []
+        for item in base_result.get("items", []):
+            if self._matches_search_criteria(item, search_params):
+                filtered_items.append(item)
+        
+        # Prepare result with pagination
+        result = {
+            "items": filtered_items,
+            "count": len(filtered_items),
+            "total_scanned": base_result.get("count", 0)
+        }
+        
+        # If no items were found after filtering, explicitly set has_more=False
+        # even if DynamoDB returned a LastEvaluatedKey
+        if len(filtered_items) == 0:
+            result["has_more"] = False
+        else:
+            # Otherwise, use the has_more flag from the base query
+            result["has_more"] = base_result.get("has_more", False)
+        
+        # Only include pagination token if there are filtered items
+        # and the base query has a LastEvaluatedKey
+        if len(filtered_items) > 0 and base_result.get("last_evaluated_key"):
+            result["last_evaluated_key"] = base_result["last_evaluated_key"]
+        elif len(filtered_items) == 0:
+            # If no items were found, don't include a pagination token
+            # regardless of whether the base query had a LastEvaluatedKey
+            logger.info("No items found after filtering, setting has_more=False and removing pagination token")
+        
+        # Apply standard pagination encoding
+        final_result = self._encode_pagination_result(result)
+        
+        logger.info("Search returned %d results", len(filtered_items))
+        return final_result
+    
+    def _get_base_query_result(self, search_params: Dict, limit: int = None, 
+                              last_evaluated_key: Dict = None) -> Dict:
+        """
+        Get the base query result using the most efficient method based on parameters.
+        
+        Args:
+            search_params: Search parameters to use
+            limit: Optional maximum number of items to return
+            last_evaluated_key: Optional key to start from for pagination
             
         Returns:
-            Dict with licenses and pagination info
+            Query result with items and pagination info, including the limit
         """
-        logger.info("Listing licenses for consumer_id: %s (limit: %s)", consumer_id, limit)
+        # Try to use GSIs for efficiency when possible
+        indexable_fields = ["consumer_id", "content_id", "publisher_id", "status"]
         
-        result = self.db.query_items(
-            key_name="consumer_id", 
-            key_value=consumer_id,
+        for field in indexable_fields:
+            if field in search_params:
+                try:
+                    # Try to use the field's GSI
+                    result = self.db.query_items(
+                        key_name=field,
+                        key_value=search_params[field],
+                        limit=limit,
+                        last_evaluated_key=last_evaluated_key
+                    )
+                    # Remove the field from search_params to avoid double filtering
+                    del search_params[field]
+                    
+                    # Include the limit in the result for pagination calculation
+                    if limit is not None:
+                        result["limit"] = limit
+                        
+                    return result
+                except Exception as e:
+                    logger.warning("Failed to use index for %s: %s", field, e)
+                    # Continue to the next field or fall back to scan
+        
+        # If no indexed field is available, fall back to scan
+        result = self.db.scan_items(
             limit=limit,
-            last_evaluated_key=self._decode_pagination_token(pagination_token)
+            last_evaluated_key=last_evaluated_key
         )
         
         # Include the limit in the result for pagination calculation
         if limit is not None:
             result["limit"] = limit
-        
-        # Apply proper pagination encoding
-        return self._encode_pagination_result(result)
-
-    @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
-    def list_licenses_by_content(self, content_id: str, limit: int = None, pagination_token: str = None) -> Dict:
+            
+        return result
+    
+    def _matches_search_criteria(self, item: Dict, search_params: Dict) -> bool:
         """
-        List licenses by content with pagination.
+        Check if an item matches all search criteria.
         
         Args:
-            content_id: ID of the content to list licenses for
-            limit: Maximum number of items to return
-            pagination_token: Token for pagination
+            item: License item to check
+            search_params: Search parameters to match against
             
         Returns:
-            Dict with licenses and pagination info
+            True if the item matches all criteria, False otherwise
         """
-        logger.info("Listing licenses for content_id: %s (limit: %s)", content_id, limit)
+        for key, value in search_params.items():
+            # Skip internal fields and headers
+            if key.startswith('_'):
+                continue
+                
+            # Handle standard fields
+            if key in item:
+                if not self._values_match(item[key], value):
+                    return False
+            # If the field isn't found, it's not a match
+            else:
+                # Log that the field is missing for debugging
+                logger.debug("Field '%s' not found in item: %s", key, item)
+                return False
+                
+        # All criteria matched
+        return True
+    
+    def _values_match(self, item_value: Any, search_value: Any) -> bool:
+        """
+        Check if a value matches the search criteria.
         
-        result = self.db.query_items(
-            key_name="content_id", 
-            key_value=content_id,
-            limit=limit,
-            last_evaluated_key=self._decode_pagination_token(pagination_token)
-        )
-        
-        # Include the limit in the result for pagination calculation
-        if limit is not None:
-            result["limit"] = limit
-        
-        # Apply proper pagination encoding
-        return self._encode_pagination_result(result)
+        Args:
+            item_value: Value from the item
+            search_value: Value from the search criteria
+            
+        Returns:
+            True if values match, False otherwise
+        """
+        # Handle strings with case-insensitive partial matching
+        if isinstance(item_value, str) and isinstance(search_value, str):
+            return search_value.lower() in item_value.lower()
+            
+        # Handle lists with any-match semantics
+        elif isinstance(item_value, list):
+            if isinstance(search_value, list):
+                # If search value is also a list, check if any value matches
+                return any(self._values_match(item_value, sv) for sv in search_value)
+            else:
+                # If search value is a scalar, check if it matches any item in the list
+                if isinstance(search_value, str):
+                    return any(search_value.lower() in str(v).lower() for v in item_value)
+                else:
+                    return search_value in item_value
+                
+        # Exact match for other types
+        else:
+            return item_value == search_value
 
     @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
     def revoke_license(self, license_id: str) -> Dict:
@@ -161,22 +279,18 @@ class LicenseHelper:
         # Only add pagination if there are actual results
         items = result_copy.get("items", [])
         
-        # Determine if there are more items to fetch
-        # Consider both: if we have a last_evaluated_key AND if the current query returned full limit
-        has_more = False
-        if "last_evaluated_key" in result_copy:
-            # Check if we're at the last page
-            # If this page has fewer items than the limit, it's the last page regardless of last_evaluated_key
-            limit = result_copy.get("limit")
-            if limit is not None and len(items) >= limit:
-                has_more = True
-            elif limit is None and len(items) > 0:
-                # If no limit was specified but we have items and a token, assume more pages
-                has_more = True
-            # Otherwise, even with last_evaluated_key, if we have < limit items, we're done
-        
-        # Add pagination information to the response if there are items
-        if len(items) > 0:
+        # If no items present, never add pagination regardless of has_more
+        if len(items) == 0:
+            # Add empty pagination structure with has_more=false
+            result_copy["pagination"] = {
+                "has_more": False
+            }
+            logger.debug("No items in result, setting has_more=False")
+        else:
+            # Get has_more flag from the result
+            has_more = result_copy.get("has_more", False)
+            
+            # If has_more is True, ensure we have a last_evaluated_key to use
             if has_more and "last_evaluated_key" in result_copy:
                 token_bytes = json.dumps(result_copy["last_evaluated_key"]).encode("utf-8")
                 pagination_token = base64.b64encode(token_bytes).decode("utf-8")
@@ -187,10 +301,12 @@ class LicenseHelper:
                     "has_more": True
                 }
             else:
-                # Add pagination structure with has_more=false
+                # Add pagination structure with has_more=false if no token available
                 result_copy["pagination"] = {
                     "has_more": False
                 }
+                if has_more:
+                    logger.warning("has_more=True but no last_evaluated_key available, correcting to has_more=False")
         
         # Remove raw key from response
         if "last_evaluated_key" in result_copy:

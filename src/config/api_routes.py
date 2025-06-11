@@ -158,18 +158,10 @@ class KnowlioApiRoutes:
             ),
             ApiRoute(
                 method="POST",
-                path="licenses/list",
+                path="licenses/search",
                 processor_name="license",
-                action="list_licenses_by_consumer",
-                description="List licenses by consumer (POST)",
-            ),
-            ApiRoute(
-                method="POST",
-                path="licenses/content/{content_id}/list",
-                processor_name="license",
-                action="list_licenses_by_content",
-                description="List licenses by content (POST)",
-                path_parameters=["content_id"]
+                action="search_licenses",
+                description="Search licenses with flexible parameters and pagination",
             ),
             ApiRoute(
                 method="POST",
