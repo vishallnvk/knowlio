@@ -146,12 +146,15 @@ class UserHelper:
             
         logger.info("Listing users with role: %s (limit: %s)", role, limit)
         
-        return self.db.query_items(
+        result = self.db.query_items(
             key_name="role", 
             key_value=role,
             limit=limit,
             last_evaluated_key=self._decode_pagination_token(pagination_token)
         )
+        
+        # Apply proper pagination encoding
+        return self._encode_pagination_result(result)
         
     @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
     def search_users(self, search_params: Dict, limit: int = None, pagination_token: str = None) -> Dict:
@@ -209,7 +212,8 @@ class UserHelper:
             base_result["items"] = filtered_items
             base_result["count"] = len(filtered_items)
         
-        return base_result
+        # Apply proper pagination encoding
+        return self._encode_pagination_result(base_result)
         
     @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
     def admin_update_user(self, user_id: str, field: str, value: Any) -> Dict:
@@ -333,3 +337,58 @@ class UserHelper:
         except Exception as e:
             logger.error(f"Failed to decode pagination token: {e}")
             raise ValueError(f"Invalid pagination token: {pagination_token}")
+            
+    def _encode_pagination_result(self, result: Dict) -> Dict:
+        """
+        Encode pagination information in a result dictionary.
+        
+        Args:
+            result: Dictionary containing query/scan result with last_evaluated_key
+            
+        Returns:
+            Result with encoded pagination_token and proper pagination structure
+        """
+        # Create a copy of the result to avoid modifying the original
+        result_copy = result.copy()
+        
+        # Only add pagination if there are actual results
+        items = result_copy.get("items", [])
+        
+        # Determine if there are more items to fetch
+        # Consider both: if we have a last_evaluated_key AND if the current query returned full limit
+        has_more = False
+        if "last_evaluated_key" in result_copy:
+            # Check if we're at the last page
+            # If this page has fewer items than the limit, it's the last page regardless of last_evaluated_key
+            limit = result_copy.get("limit")
+            if limit is not None and len(items) >= limit:
+                has_more = True
+            elif limit is None and len(items) > 0:
+                # If no limit was specified but we have items and a token, assume more pages
+                has_more = True
+            # Otherwise, even with last_evaluated_key, if we have < limit items, we're done
+        
+        # Add pagination information to the response if there are items
+        if len(items) > 0:
+            import json
+            import base64
+            if has_more and "last_evaluated_key" in result_copy:
+                token_bytes = json.dumps(result_copy["last_evaluated_key"]).encode("utf-8")
+                pagination_token = base64.b64encode(token_bytes).decode("utf-8")
+                
+                # Create pagination structure with next token
+                result_copy["pagination"] = {
+                    "next_token": pagination_token,
+                    "has_more": True
+                }
+            else:
+                # Add pagination structure with has_more=false
+                result_copy["pagination"] = {
+                    "has_more": False
+                }
+        
+        # Remove raw key from response
+        if "last_evaluated_key" in result_copy:
+            del result_copy["last_evaluated_key"]
+            
+        return result_copy

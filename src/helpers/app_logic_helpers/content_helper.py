@@ -181,96 +181,6 @@ class ContentHelper:
         return self.update_content_metadata(content_id, {"metadata": metadata})
 
     @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
-    def list_content_by_publisher(self, publisher_id: str, limit: int = None, 
-                                 pagination_token: str = None) -> Dict:
-        """
-        List content by publisher with pagination support
-        
-        Args:
-            publisher_id: The publisher ID to filter by
-            limit: Optional maximum number of items to return
-            pagination_token: Optional pagination token from previous query
-            
-        Returns:
-            Dict containing items and pagination details
-        """
-        logger.info("Listing content for publisher_id: %s (limit: %s)", publisher_id, limit)
-        
-        # Convert pagination token from string to dict if provided
-        last_evaluated_key = self._decode_pagination_token(pagination_token)
-        
-        # Query with pagination
-        result = self.db.query_items(
-            key_name="publisher_id", 
-            key_value=publisher_id,
-            limit=limit,
-            last_evaluated_key=last_evaluated_key
-        )
-        
-        # Apply standard pagination encoding
-        return self._encode_pagination_result(result)
-        
-    @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
-    def list_content_by_publisher_and_type(self, publisher_id: str, content_type: str, 
-                                         limit: int = None, pagination_token: str = None) -> Dict:
-        """
-        List content by publisher and content type with pagination support
-        
-        Args:
-            publisher_id: The publisher ID to filter by
-            content_type: The content type to filter by (from ContentType enum)
-            limit: Optional maximum number of items to return
-            pagination_token: Optional pagination token from previous query
-            
-        Returns:
-            Dict containing items and pagination details
-        """
-        logger.info("Listing content for publisher_id: %s and type: %s (limit: %s)", 
-                   publisher_id, content_type, limit)
-        
-        # We'll first query by publisher ID, then filter by content type
-        # This works because publisher_id is indexed, but the combination isn't
-        
-        # Start with querying by publisher ID
-        search_params = {"publisher_id": publisher_id}
-        
-        # Get content by publisher
-        last_evaluated_key = self._decode_pagination_token(pagination_token)
-        
-        # We'll need to get more items than requested limit since we'll filter some out
-        adjusted_limit = None if limit is None else limit * 3  # Get more items to account for filtering
-        
-        # Query items by publisher_id
-        result = self.db.query_items(
-            key_name="publisher_id", 
-            key_value=publisher_id,
-            limit=adjusted_limit,
-            last_evaluated_key=last_evaluated_key
-        )
-        
-        # Filter results by content type
-        filtered_items = []
-        for item in result.get("items", []):
-            if item.get("type") == content_type:
-                filtered_items.append(item)
-                if limit is not None and len(filtered_items) >= limit:
-                    break  # Stop once we have enough items
-        
-        # Prepare result with filtered items
-        filtered_result = {
-            "items": filtered_items,
-            "count": len(filtered_items)
-        }
-        
-        # Preserve pagination info if we haven't reached the limit
-        if limit is not None and len(filtered_items) < limit and "last_evaluated_key" in result:
-            filtered_result["last_evaluated_key"] = result["last_evaluated_key"]
-            filtered_result["has_more"] = True
-        
-        # Apply standard pagination encoding
-        return self._encode_pagination_result(filtered_result)
-
-    @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
     def archive_content(self, content_id: str) -> Dict:
         """
         Archive content by setting its status to ARCHIVED.
@@ -340,29 +250,6 @@ class ContentHelper:
         
         logger.info("Search returned %d results", len(filtered_items))
         return final_result
-        
-    @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
-    def query_by_attribute(self, attribute: str, value: Any, limit: int = None,
-                         pagination_token: str = None) -> Dict:
-        """
-        Query content by any attribute with pagination support.
-        
-        This is a generic method that can query by any top-level attribute
-        that has a GSI, or fall back to scanning and filtering.
-        
-        Args:
-            attribute: Attribute name to query by
-            value: Value to match
-            limit: Optional maximum number of items to return
-            pagination_token: Optional pagination token from previous query
-            
-        Returns:
-            Dict containing matching content items and pagination details
-        """
-        logger.info("Querying content by %s = %s (limit: %s)", attribute, value, limit)
-        
-        search_params = {attribute: value}
-        return self.search_content(search_params, limit, pagination_token)
 
     def _get_base_query_result(self, search_params: Dict, limit: int = None, 
                               last_evaluated_key: Dict = None) -> Dict:
@@ -375,7 +262,7 @@ class ContentHelper:
             last_evaluated_key: Optional key to start from for pagination
             
         Returns:
-            Query result with items and pagination info
+            Query result with items and pagination info, including the limit
         """
         # Try to use GSIs for efficiency when possible
         indexable_fields = ["publisher_id", "type", "status"]
@@ -392,16 +279,27 @@ class ContentHelper:
                     )
                     # Remove the field from search_params to avoid double filtering
                     del search_params[field]
+                    
+                    # Include the limit in the result for pagination calculation
+                    if limit is not None:
+                        result["limit"] = limit
+                        
                     return result
                 except Exception as e:
                     logger.warning("Failed to use index for %s: %s", field, e)
                     # Continue to the next field or fall back to scan
         
         # If no indexed field is available, fall back to scan
-        return self.db.scan_items(
+        result = self.db.scan_items(
             limit=limit,
             last_evaluated_key=last_evaluated_key
         )
+        
+        # Include the limit in the result for pagination calculation
+        if limit is not None:
+            result["limit"] = limit
+            
+        return result
     
     def _matches_search_criteria(self, item: Dict, search_params: Dict) -> bool:
         """
@@ -513,15 +411,47 @@ class ContentHelper:
             result: Dictionary containing query/scan result with last_evaluated_key
             
         Returns:
-            Result with encoded pagination_token
+            Result with encoded pagination_token and proper pagination structure
         """
         # Create a copy of the result to avoid modifying the original
         result_copy = result.copy()
         
-        # Encode last_evaluated_key as pagination token if present
+        # Only add pagination if there are actual results
+        items = result_copy.get("items", [])
+        
+        # Determine if there are more items to fetch
+        # Consider both: if we have a last_evaluated_key AND if the current query returned full limit
+        has_more = False
         if "last_evaluated_key" in result_copy:
-            token_bytes = json.dumps(result_copy["last_evaluated_key"]).encode("utf-8")
-            result_copy["pagination_token"] = base64.b64encode(token_bytes).decode("utf-8")
-            del result_copy["last_evaluated_key"]  # Remove raw key from response
+            # Check if we're at the last page
+            # If this page has fewer items than the limit, it's the last page regardless of last_evaluated_key
+            limit = result_copy.get("limit")
+            if limit is not None and len(items) >= limit:
+                has_more = True
+            elif limit is None and len(items) > 0:
+                # If no limit was specified but we have items and a token, assume more pages
+                has_more = True
+            # Otherwise, even with last_evaluated_key, if we have < limit items, we're done
+        
+        # Add pagination information to the response if there are items
+        if len(items) > 0:
+            if has_more and "last_evaluated_key" in result_copy:
+                token_bytes = json.dumps(result_copy["last_evaluated_key"]).encode("utf-8")
+                pagination_token = base64.b64encode(token_bytes).decode("utf-8")
+                
+                # Create pagination structure with next token
+                result_copy["pagination"] = {
+                    "next_token": pagination_token,
+                    "has_more": True
+                }
+            else:
+                # Add pagination structure with has_more=false
+                result_copy["pagination"] = {
+                    "has_more": False
+                }
+        
+        # Remove raw key from response
+        if "last_evaluated_key" in result_copy:
+            del result_copy["last_evaluated_key"]
             
         return result_copy

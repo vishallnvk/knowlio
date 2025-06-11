@@ -7,10 +7,12 @@
 # To make changes, edit the source file and run sync_api_routes.py.
 # Last synchronized: 2025-06-10 08:36:14
 # 
-# NOTE: This file was manually edited on 2025-06-10 to:
+# NOTE: This file was manually edited on 2025-06-11 to:
 # 1. Remove the query_by_attribute route (GET content/query/{attribute}/{value})
 #    as this functionality has been deprecated.
-# 2. Convert all GET routes to POST routes to prevent exposing parameters
+# 2. Remove list_content_by_publisher and list_content_by_publisher_and_type routes
+#    as these have been consolidated into the search_content route.
+# 3. Convert all GET routes to POST routes to prevent exposing parameters
 #    in URLs and to ensure proper parameter type handling.
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
@@ -121,26 +123,13 @@ class KnowlioApiRoutes:
                 description="Update a single content attribute",
                 path_parameters=["content_id", "attribute"]
             ),
-            ApiRoute(
-                method="POST",
-                path="content/list",
-                processor_name="content",
-                action="list_content_by_publisher",
-                description="List content by publisher with pagination (POST)",
-            ),
-            ApiRoute(
-                method="POST",
-                path="content/filter",
-                processor_name="content",
-                action="list_content_by_publisher_and_type",
-                description="List content by publisher and content type with pagination (POST)",
-            ),
+            # Combined content search endpoint
             ApiRoute(
                 method="POST",
                 path="content/search",
                 processor_name="content",
                 action="search_content",
-                description="Search content with flexible parameters and pagination",
+                description="Search content with flexible parameters and pagination (supports all query formats)",
             ),
             ApiRoute(
                 method="POST",
@@ -149,13 +138,6 @@ class KnowlioApiRoutes:
                 action="archive_content",
                 description="Archive content",
                 path_parameters=["content_id"]
-            ),
-            ApiRoute(
-                method="POST",
-                path="content/query-attributes",
-                processor_name="content",
-                action="query_by_attributes",
-                description="Query content by multiple attributes simultaneously",
             ),
             
             # License Management Routes

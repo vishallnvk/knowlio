@@ -57,7 +57,11 @@ class DynamoDBHelper:
         Returns:
             Dict containing items and optional last_evaluated_key for pagination
         """
-        logger.info("Querying items where %s = %s (limit: %s)", key_name, key_value, limit)
+        if last_evaluated_key:
+            logger.info("Querying items where %s = %s (limit: %s, pagination_token: %s)", 
+                       key_name, key_value, limit, last_evaluated_key)
+        else:
+            logger.info("Querying items where %s = %s (limit: %s)", key_name, key_value, limit)
         query_kwargs = {
             "IndexName": f"{key_name}-index",  # assumes GSI is defined as `${key_name}-index`
             "KeyConditionExpression": Key(key_name).eq(key_value)
@@ -81,10 +85,21 @@ class DynamoDBHelper:
             # Add pagination token if there are more results
             if "LastEvaluatedKey" in response:
                 result["last_evaluated_key"] = response["LastEvaluatedKey"]
-                result["has_more"] = True
+                if len(result["items"]) > 0:
+                    # Only set has_more=true if we actually got items AND there's a LastEvaluatedKey
+                    result["has_more"] = True
+                else:
+                    # Even with LastEvaluatedKey, if no items were returned, we're done
+                    result["has_more"] = False
+                    logger.info("Setting has_more=false because no items were returned despite having LastEvaluatedKey")
             else:
                 result["has_more"] = False
                 
+            # Add limit to result for proper pagination handling
+            if limit is not None:
+                result["limit"] = limit
+                
+            logger.info("Query returned %d items, has_more=%s", len(result["items"]), result["has_more"])
             return result
             
         except Exception as e:
@@ -110,7 +125,10 @@ class DynamoDBHelper:
         Returns:
             Dict containing items and optional last_evaluated_key for pagination
         """
-        logger.info("Scanning table: %s (limit: %s)", self.table_name, limit)
+        if last_evaluated_key:
+            logger.info("Scanning table: %s (limit: %s, pagination_token: %s)", self.table_name, limit, last_evaluated_key)
+        else:
+            logger.info("Scanning table: %s (limit: %s)", self.table_name, limit)
         scan_kwargs = {}
         
         if filter_expression:
@@ -133,11 +151,21 @@ class DynamoDBHelper:
         # Add pagination token if there are more results
         if "LastEvaluatedKey" in response:
             result["last_evaluated_key"] = response["LastEvaluatedKey"]
-            result["has_more"] = True
+            if len(result["items"]) > 0:
+                # Only set has_more=true if we actually got items AND there's a LastEvaluatedKey
+                result["has_more"] = True
+            else:
+                # Even with LastEvaluatedKey, if no items were returned, we're done
+                result["has_more"] = False
+                logger.info("Setting has_more=false because no items were returned despite having LastEvaluatedKey")
         else:
             result["has_more"] = False
             
-        logger.info("Scan returned %d items", len(result["items"]))
+        # Add limit to result for proper pagination handling
+        if limit is not None:
+            result["limit"] = limit
+            
+        logger.info("Scan returned %d items, has_more=%s", len(result["items"]), result["has_more"])
         return result
         
     @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])

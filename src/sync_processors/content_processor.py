@@ -22,11 +22,8 @@ class ContentProcessor(BaseProcessor):
             "get_content_details": self._get_content_details,
             "update_content_metadata": self._update_content_metadata,
             "update_content_attribute": self._update_content_attribute,
-            "list_content_by_publisher": self._list_content_by_publisher,
-            "list_content_by_publisher_and_type": self._list_content_by_publisher_and_type,
             "archive_content": self._archive_content,
             "search_content": self._search_content,
-            "query_by_attributes": self._query_by_attributes,
         })
         
     def _validate_workflow_status_fields(self, params_dict: Dict) -> Dict:
@@ -243,98 +240,6 @@ class ContentProcessor(BaseProcessor):
             logger.error(f"Error updating content attribute: {str(e)}")
             return {"error": f"Failed to update content attribute: {str(e)}"}
 
-    def _list_content_by_publisher(self, payload: Dict) -> Dict:
-        """
-        List content by publisher with pagination support.
-        
-        Required payload keys:
-        - publisher_id: ID of the publisher to list content for
-        
-        Optional payload keys:
-        - limit: Maximum number of items to return
-        - pagination_token: Token for retrieving the next page of results
-        """
-        try:
-            require_keys(payload, ["publisher_id"])
-            
-            # Extract pagination parameters if provided
-            limit = payload.get("limit")
-            pagination_token = payload.get("pagination_token")
-            
-            result = self.helper.list_content_by_publisher(
-                publisher_id=payload["publisher_id"],
-                limit=limit,
-                pagination_token=pagination_token
-            )
-            
-            # Handle error case
-            if "error" in result:
-                return {"error": result["error"]}
-            
-            # Convert result structure to standardized format
-            response = {
-                "contents": result.get("items", []),
-                "count": result.get("count", 0)
-            }
-            
-            # Add pagination details using helper method
-            response = self._add_pagination_to_response(result, response)
-                
-            return response
-        except Exception as e:
-            logger.error(f"Error listing content: {str(e)}")
-            return {"error": f"Failed to list content: {str(e)}"}
-
-    def _list_content_by_publisher_and_type(self, payload: Dict) -> Dict:
-        """
-        List content by publisher and content type with pagination support.
-        
-        Required payload keys:
-        - publisher_id: ID of the publisher to list content for
-        - content_type: Content type to filter by (from ContentType enum)
-        
-        Optional payload keys:
-        - limit: Maximum number of items to return
-        - pagination_token: Token for retrieving the next page of results
-        """
-        try:
-            require_keys(payload, ["publisher_id", "content_type"])
-            
-            # Validate content_type parameter
-            content_type = payload["content_type"]
-            if not ContentType.is_valid(content_type):
-                valid_types = ", ".join(ContentType.get_valid_types())
-                return {"error": f"Invalid content_type: {content_type}. Valid types: {valid_types}"}
-            
-            # Extract pagination parameters if provided
-            limit = payload.get("limit")
-            pagination_token = payload.get("pagination_token")
-            
-            result = self.helper.list_content_by_publisher_and_type(
-                publisher_id=payload["publisher_id"],
-                content_type=content_type,
-                limit=limit,
-                pagination_token=pagination_token
-            )
-            
-            # Handle error case
-            if "error" in result:
-                return {"error": result["error"]}
-            
-            # Convert result structure to standardized format
-            response = {
-                "contents": result.get("items", []),
-                "count": result.get("count", 0)
-            }
-            
-            # Add pagination details using helper method
-            response = self._add_pagination_to_response(result, response)
-                
-            return response
-        except Exception as e:
-            logger.error(f"Error listing content by publisher and type: {str(e)}")
-            return {"error": f"Failed to list content by publisher and type: {str(e)}"}
-
     def _archive_content(self, payload: Dict) -> Dict:
         """
         Archive content by setting its status to ARCHIVED.
@@ -354,105 +259,58 @@ class ContentProcessor(BaseProcessor):
         
     def _search_content(self, payload: Dict) -> Dict:
         """
-        Search for content based on flexible parameters with pagination support.
+        Unified search method for content that handles all supported formats:
+        1. list_content_by_publisher: {"publisher_id": "pub123", ...}
+        2. list_content_by_publisher_and_type: {"publisher_id": "pub123", "content_type": "BOOK", ...}
+        3. search_content: {any field combinations without the attributes wrapper}
+        4. Legacy format: {"attributes": {field combinations}, ...}
         
-        Optional payload keys:
-        - Any combination of content fields or metadata
-        - limit: Maximum number of results to return
-        - pagination_token: Token for retrieving the next page of results
-                
-        Examples:
-        - Search by type: {"type": ContentType.BOOK.value}
-        - Search by status: {"status": ContentStatus.ACTIVE.value}
-        - Search by title pattern: {"title": "python"}
-        - Search by metadata: {"metadata.isbn": "1234567890"}
-        - Search by workflow status: {"rag_status": WorkflowStatus.ENABLED.value}
-        """
-        try:
-            # Extract pagination parameters
-            search_params = payload.copy()
-            limit = search_params.pop("limit", None)
-            pagination_token = search_params.pop("pagination_token", None)
-            
-            # Validate status parameters if provided
-            error = self._validate_content_status(search_params)
-            if error:
-                return error
-                
-            # Validate workflow status parameters if provided
-            error = self._validate_workflow_status_fields(search_params)
-            if error:
-                return error
-                    
-            # Validate type parameter if provided
-            error = self._validate_content_type(search_params)
-            if error:
-                return error
-            
-            # Execute search with remaining parameters as filters
-            search_result = self.helper.search_content(
-                search_params=search_params,
-                limit=limit,
-                pagination_token=pagination_token
-            )
-            
-            # Handle error case
-            if "error" in search_result:
-                return {"error": search_result["error"]}
-            
-            # Convert result structure to standardized format
-            response = {
-                "contents": search_result.get("items", []),
-                "count": search_result.get("count", 0),
-                "total_scanned": search_result.get("total_scanned", 0)
-            }
-            
-            # Add pagination details using helper method
-            response = self._add_pagination_to_response(search_result, response)
-                
-            return response
-        except Exception as e:
-            logger.error(f"Error searching content: {str(e)}")
-            return {"error": f"Failed to search content: {str(e)}"}
-
-
-            
-    def _query_by_attributes(self, payload: Dict) -> Dict:
-        """
-        Query content by multiple attributes simultaneously with pagination support.
-        
-        Required payload keys:
-        - attributes: Dictionary of attribute-value pairs to filter by
-        
-        Optional payload keys:
+        All formats support pagination with:
         - limit: Maximum number of items to return
         - pagination_token: Token for retrieving the next page of results
-        
-        Example payload:
-        {
-            "attributes": {
-                "publisher_id": "publisher-123",
-                "type": "BOOK",
-                "status": "ACTIVE"
-            },
-            "limit": 10,
-            "pagination_token": "base64encodedtoken"
-        }
         """
         try:
-            require_keys(payload, ["attributes"])
-            
-            # Make sure attributes is a dictionary
-            attributes = payload.get("attributes")
-            if not isinstance(attributes, dict):
-                return {"error": "The 'attributes' field must be a dictionary of attribute-value pairs"}
-                
-            # Extract pagination parameters if provided
+            # Handle different payload formats based on the action that was called
+            action = payload.get("__action__", "search_content")
+            search_params = {}
             limit = payload.get("limit")
             pagination_token = payload.get("pagination_token")
             
-            # Validate each attribute according to its type
-            search_params = attributes.copy()
+            # Format 1: list_content_by_publisher
+            if action == "list_content_by_publisher":
+                require_keys(payload, ["publisher_id"])
+                search_params = {"publisher_id": payload["publisher_id"]}
+            
+            # Format 2: list_content_by_publisher_and_type
+            elif action == "list_content_by_publisher_and_type":
+                require_keys(payload, ["publisher_id", "content_type"])
+                content_type = payload["content_type"]
+                
+                # Validate content_type parameter
+                if not ContentType.is_valid(content_type):
+                    valid_types = ", ".join(ContentType.get_valid_types())
+                    return {"error": f"Invalid content_type: {content_type}. Valid types: {valid_types}"}
+                
+                search_params = {
+                    "publisher_id": payload["publisher_id"],
+                    "type": content_type
+                }
+                
+            # Format 3: search_content (direct parameters)
+            elif action == "search_content":
+                # Check for attributes format first (legacy support)
+                if "attributes" in payload:
+                    attributes = payload.get("attributes")
+                    if not isinstance(attributes, dict):
+                        return {"error": "The 'attributes' field must be a dictionary of attribute-value pairs"}
+                    search_params = attributes.copy()
+                else:
+                    # Use all parameters directly as search criteria
+                    search_params = payload.copy()
+                    # Remove pagination parameters
+                    search_params.pop("limit", None)
+                    search_params.pop("pagination_token", None)
+                    search_params.pop("__action__", None)
             
             # Validate status parameter if provided
             error = self._validate_content_status(search_params)
@@ -480,17 +338,18 @@ class ContentProcessor(BaseProcessor):
             if "error" in search_result:
                 return {"error": search_result["error"]}
             
-            # Convert result structure to standardized format
+            # Convert result structure to standardized format including pagination
             response = {
                 "contents": search_result.get("items", []),
                 "count": search_result.get("count", 0),
                 "total_scanned": search_result.get("total_scanned", 0)
             }
             
-            # Add pagination details using helper method
-            response = self._add_pagination_to_response(search_result, response)
+            # Include pagination information directly in response
+            if "pagination" in search_result:
+                response["pagination"] = search_result["pagination"]
                 
             return response
         except Exception as e:
-            logger.error(f"Error querying content by attributes: {str(e)}")
-            return {"error": f"Failed to query content by attributes: {str(e)}"}
+            logger.error(f"Error searching content: {str(e)}")
+            return {"error": f"Failed to search content: {str(e)}"}

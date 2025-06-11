@@ -123,12 +123,9 @@ class UserProcessor(BaseProcessor):
                 "total_scanned": result.get("scanned_count", 0),
             }
             
-            # Add pagination info if present
-            if "pagination_token" in result:
-                response["pagination"] = {
-                    "next_token": result["pagination_token"],
-                    "has_more": result.get("has_more", False)
-                }
+            # Include pagination information directly from the helper result
+            if "pagination" in result:
+                response["pagination"] = result["pagination"]
             
             return response
         except UserValidationError as e:
@@ -163,12 +160,9 @@ class UserProcessor(BaseProcessor):
                 "total_scanned": result.get("scanned_count", 0),
             }
             
-            # Add pagination info if present
-            if "pagination_token" in result:
-                response["pagination"] = {
-                    "next_token": result["pagination_token"],
-                    "has_more": result.get("has_more", False)
-                }
+            # Include pagination information directly from the helper result
+            if "pagination" in result:
+                response["pagination"] = result["pagination"]
             
             return response
         except Exception as e:
