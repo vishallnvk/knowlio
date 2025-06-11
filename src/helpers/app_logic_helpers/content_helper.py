@@ -1,6 +1,4 @@
 import uuid
-import json
-import base64
 from datetime import datetime
 from typing import Dict, List, Optional, Any, Union
 
@@ -8,6 +6,7 @@ import botocore.exceptions
 from helpers.aws_service_helpers.dynamodb_helper import DynamoDBHelper
 from helpers.common_helper.logger_helper import LoggerHelper
 from helpers.common_helper.common_helper import Retry
+from helpers.common_helper.pagination_helper import PaginationHelper
 from models.content_model import ContentModel
 from enums.content_status import ContentStatus, WorkflowStatus
 
@@ -233,20 +232,11 @@ class ContentHelper:
             if self._matches_search_criteria(item, search_params):
                 filtered_items.append(item)
         
-        # Prepare result with pagination
-        result = {
-            "items": filtered_items,
-            "count": len(filtered_items),
-            "total_scanned": base_result.get("count", 0),
-            "has_more": base_result.get("has_more", False)
-        }
-        
-        # Encode pagination token if present
-        if base_result.get("last_evaluated_key"):
-            result["last_evaluated_key"] = base_result["last_evaluated_key"]
+        # Use the common pagination helper to apply search filters and format results
+        result = PaginationHelper.apply_search_filters(base_result, filtered_items, search_params)
         
         # Apply standard pagination encoding
-        final_result = self._encode_pagination_result(result)
+        final_result = PaginationHelper.encode_pagination_result(result)
         
         logger.info("Search returned %d results", len(filtered_items))
         return final_result
@@ -393,15 +383,7 @@ class ContentHelper:
         Raises:
             ValueError: If token format is invalid
         """
-        if not pagination_token:
-            return None
-            
-        try:
-            decoded_token = base64.b64decode(pagination_token)
-            return json.loads(decoded_token)
-        except Exception as e:
-            logger.error("Failed to decode pagination token: %s", e)
-            raise ValueError(f"Invalid pagination token format: {pagination_token}")
+        return PaginationHelper.decode_pagination_token(pagination_token)
     
     def _encode_pagination_result(self, result: Dict) -> Dict:
         """
@@ -413,45 +395,4 @@ class ContentHelper:
         Returns:
             Result with encoded pagination_token and proper pagination structure
         """
-        # Create a copy of the result to avoid modifying the original
-        result_copy = result.copy()
-        
-        # Only add pagination if there are actual results
-        items = result_copy.get("items", [])
-        
-        # Determine if there are more items to fetch
-        # Consider both: if we have a last_evaluated_key AND if the current query returned full limit
-        has_more = False
-        if "last_evaluated_key" in result_copy:
-            # Check if we're at the last page
-            # If this page has fewer items than the limit, it's the last page regardless of last_evaluated_key
-            limit = result_copy.get("limit")
-            if limit is not None and len(items) >= limit:
-                has_more = True
-            elif limit is None and len(items) > 0:
-                # If no limit was specified but we have items and a token, assume more pages
-                has_more = True
-            # Otherwise, even with last_evaluated_key, if we have < limit items, we're done
-        
-        # Add pagination information to the response if there are items
-        if len(items) > 0:
-            if has_more and "last_evaluated_key" in result_copy:
-                token_bytes = json.dumps(result_copy["last_evaluated_key"]).encode("utf-8")
-                pagination_token = base64.b64encode(token_bytes).decode("utf-8")
-                
-                # Create pagination structure with next token
-                result_copy["pagination"] = {
-                    "next_token": pagination_token,
-                    "has_more": True
-                }
-            else:
-                # Add pagination structure with has_more=false
-                result_copy["pagination"] = {
-                    "has_more": False
-                }
-        
-        # Remove raw key from response
-        if "last_evaluated_key" in result_copy:
-            del result_copy["last_evaluated_key"]
-            
-        return result_copy
+        return PaginationHelper.encode_pagination_result(result)

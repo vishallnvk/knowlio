@@ -70,13 +70,6 @@ class KnowlioApiRoutes:
             ),
             ApiRoute(
                 method="POST",
-                path="users/list",
-                processor_name="user",
-                action="list_users_by_role",
-                description="List users by role with pagination (POST)",
-            ),
-            ApiRoute(
-                method="POST",
                 path="users/search",
                 processor_name="user",
                 action="search_users",

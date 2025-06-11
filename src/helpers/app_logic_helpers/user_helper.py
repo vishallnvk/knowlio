@@ -6,6 +6,7 @@ from helpers.aws_service_helpers.dynamodb_helper import DynamoDBHelper
 from helpers.common_helper.logger_helper import LoggerHelper
 from helpers.common_helper.common_helper import Retry
 from helpers.common_helper.auth_helper import RoleBasedAuth, AuthorizationError
+from helpers.common_helper.pagination_helper import PaginationHelper
 from models.user_model import UserModel
 import botocore.exceptions
 
@@ -125,38 +126,6 @@ class UserHelper:
         return self.db.update_item("user_id", user_id, updates)
 
     @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
-    def list_users_by_role(self, role: str, limit: int = None, pagination_token: str = None) -> Dict:
-        """
-        List users by role with pagination.
-        
-        Args:
-            role: Role to filter by
-            limit: Maximum number of items to return
-            pagination_token: Token for pagination
-            
-        Returns:
-            Dict with users and pagination info
-            
-        Raises:
-            UserValidationError: If role is invalid
-        """
-        if not RoleBasedAuth.validate_role(role):
-            valid_roles = ", ".join(RoleBasedAuth.VALID_ROLES)
-            raise UserValidationError(f"Invalid role: {role}. Valid roles: {valid_roles}")
-            
-        logger.info("Listing users with role: %s (limit: %s)", role, limit)
-        
-        result = self.db.query_items(
-            key_name="role", 
-            key_value=role,
-            limit=limit,
-            last_evaluated_key=self._decode_pagination_token(pagination_token)
-        )
-        
-        # Apply proper pagination encoding
-        return self._encode_pagination_result(result)
-        
-    @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
     def search_users(self, search_params: Dict, limit: int = None, pagination_token: str = None) -> Dict:
         """
         Generic search users method that can handle various criteria.
@@ -202,18 +171,20 @@ class UserHelper:
             )
         
         # Apply additional filters based on search_params
+        filtered_items = []
         if search_params:
-            filtered_items = []
             for item in base_result.get("items", []):
                 if self._matches_search_criteria(item, search_params):
                     filtered_items.append(item)
+        else:
+            # If no additional filters, use all items
+            filtered_items = base_result.get("items", [])
             
-            # Update the results with filtered items
-            base_result["items"] = filtered_items
-            base_result["count"] = len(filtered_items)
+        # Use the common pagination helper to apply search filters and format results
+        result = PaginationHelper.apply_search_filters(base_result, filtered_items, search_params)
         
-        # Apply proper pagination encoding
-        return self._encode_pagination_result(base_result)
+        # Apply standard pagination encoding
+        return PaginationHelper.encode_pagination_result(result)
         
     @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
     def admin_update_user(self, user_id: str, field: str, value: Any) -> Dict:
@@ -290,6 +261,10 @@ class UserHelper:
             True if matches all criteria, False otherwise
         """
         for key, value in search_params.items():
+            # Skip system fields (starting with underscore) like _headers
+            if key.startswith('_') or key == '__action__':
+                continue
+                
             # Handle nested keys like metadata.field
             if "." in key:
                 parts = key.split(".")
@@ -312,6 +287,7 @@ class UserHelper:
                 elif item[key] != value:
                     return False
             else:
+                logger.debug(f"Field '{key}' not found in item: {item}")
                 return False
                 
         return True
@@ -326,17 +302,7 @@ class UserHelper:
         Returns:
             Decoded last_evaluated_key or None if no token
         """
-        if not pagination_token:
-            return None
-            
-        try:
-            import json
-            import base64
-            decoded_token = base64.b64decode(pagination_token)
-            return json.loads(decoded_token)
-        except Exception as e:
-            logger.error(f"Failed to decode pagination token: {e}")
-            raise ValueError(f"Invalid pagination token: {pagination_token}")
+        return PaginationHelper.decode_pagination_token(pagination_token)
             
     def _encode_pagination_result(self, result: Dict) -> Dict:
         """
@@ -348,47 +314,4 @@ class UserHelper:
         Returns:
             Result with encoded pagination_token and proper pagination structure
         """
-        # Create a copy of the result to avoid modifying the original
-        result_copy = result.copy()
-        
-        # Only add pagination if there are actual results
-        items = result_copy.get("items", [])
-        
-        # Determine if there are more items to fetch
-        # Consider both: if we have a last_evaluated_key AND if the current query returned full limit
-        has_more = False
-        if "last_evaluated_key" in result_copy:
-            # Check if we're at the last page
-            # If this page has fewer items than the limit, it's the last page regardless of last_evaluated_key
-            limit = result_copy.get("limit")
-            if limit is not None and len(items) >= limit:
-                has_more = True
-            elif limit is None and len(items) > 0:
-                # If no limit was specified but we have items and a token, assume more pages
-                has_more = True
-            # Otherwise, even with last_evaluated_key, if we have < limit items, we're done
-        
-        # Add pagination information to the response if there are items
-        if len(items) > 0:
-            import json
-            import base64
-            if has_more and "last_evaluated_key" in result_copy:
-                token_bytes = json.dumps(result_copy["last_evaluated_key"]).encode("utf-8")
-                pagination_token = base64.b64encode(token_bytes).decode("utf-8")
-                
-                # Create pagination structure with next token
-                result_copy["pagination"] = {
-                    "next_token": pagination_token,
-                    "has_more": True
-                }
-            else:
-                # Add pagination structure with has_more=false
-                result_copy["pagination"] = {
-                    "has_more": False
-                }
-        
-        # Remove raw key from response
-        if "last_evaluated_key" in result_copy:
-            del result_copy["last_evaluated_key"]
-            
-        return result_copy
+        return PaginationHelper.encode_pagination_result(result)
