@@ -24,8 +24,13 @@ class BaseProcessor:
                 logger.error("Unsupported action: %s", action)
                 raise ValueError(f"Unsupported action: {action}")
 
+            # Make a copy of the payload to avoid modifying the original
+            payload_with_action = payload.copy() if payload else {}
+            # Add the action name so methods can know which action was called
+            payload_with_action["__action__"] = action
+
             logger.debug("Dispatching action: %s", action)
-            return self.action_map[action](payload)
+            return self.action_map[action](payload_with_action)
 
         except Exception as e:
             logger.error("Error while processing action: %s", str(e))

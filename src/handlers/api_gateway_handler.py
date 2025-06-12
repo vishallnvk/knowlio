@@ -140,7 +140,20 @@ def _build_payload_from_api_gateway_event(event: Dict[str, Any], route: ApiRoute
     # Add query parameters
     if route.query_parameters:
         query_params = event.get("queryStringParameters") or {}
+        
+        # Add all query parameters to the payload
         payload.update(query_params)
+        
+        # Convert numeric parameters from strings to integers
+        numeric_params = ["limit", "max_results", "page", "page_size"]
+        for param in numeric_params:
+            if param in payload and payload[param] is not None:
+                try:
+                    payload[param] = int(payload[param])
+                except (TypeError, ValueError):
+                    logger.warning(f"Failed to parse '{param}' as integer: {payload[param]}")
+                    # Keep as string if conversion fails
+                    pass
     
     # Add body content for POST/PUT requests
     if event.get("httpMethod") in ["POST", "PUT", "PATCH"]:

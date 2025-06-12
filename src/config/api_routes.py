@@ -6,6 +6,14 @@
 # 
 # To make changes, edit the source file and run sync_api_routes.py.
 # Last synchronized: 2025-06-10 08:36:14
+# 
+# NOTE: This file was manually edited on 2025-06-11 to:
+# 1. Remove the query_by_attribute route (GET content/query/{attribute}/{value})
+#    as this functionality has been deprecated.
+# 2. Remove list_content_by_publisher and list_content_by_publisher_and_type routes
+#    as these have been consolidated into the search_content route.
+# 3. Convert all GET routes to POST routes to prevent exposing parameters
+#    in URLs and to ensure proper parameter type handling.
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 """
@@ -27,8 +35,6 @@ class ApiRoute:
     description: str
     path_parameters: Optional[List[str]] = None
     query_parameters: Optional[List[str]] = None
-    auth_required: bool = True  # Default to requiring authentication
-    allowed_groups: Optional[List[str]] = None  # None means all authenticated users
 
 
 class KnowlioApiRoutes:
@@ -45,17 +51,14 @@ class KnowlioApiRoutes:
                 processor_name="user",
                 action="register_user",
                 description="Register a new user",
-                auth_required=False,  # Allow unauthenticated registration
             ),
             ApiRoute(
-                method="GET",
+                method="POST",
                 path="users/{user_id}",
                 processor_name="user",
                 action="get_user_profile",
-                description="Get user profile by ID",
-                path_parameters=["user_id"],
-                auth_required=True,
-                allowed_groups=None  # All authenticated users can view profiles
+                description="Get user profile by ID (POST)",
+                path_parameters=["user_id"]
             ),
             ApiRoute(
                 method="PUT",
@@ -63,19 +66,7 @@ class KnowlioApiRoutes:
                 processor_name="user",
                 action="update_user_profile",
                 description="Update user profile",
-                path_parameters=["user_id"],
-                auth_required=True,
-                allowed_groups=None  # Users can update their own profile
-            ),
-            ApiRoute(
-                method="GET",
-                path="users",
-                processor_name="user",
-                action="list_users_by_role",
-                description="List users by role with pagination",
-                query_parameters=["role", "limit", "pagination_token"],
-                auth_required=True,
-                allowed_groups=["Admin"]  # Only admins can list users
+                path_parameters=["user_id"]
             ),
             ApiRoute(
                 method="POST",
@@ -83,8 +74,6 @@ class KnowlioApiRoutes:
                 processor_name="user",
                 action="search_users",
                 description="Search users with flexible criteria",
-                auth_required=True,
-                allowed_groups=["Admin"]  # Only admins can search users
             ),
             ApiRoute(
                 method="PATCH",
@@ -92,9 +81,7 @@ class KnowlioApiRoutes:
                 processor_name="user",
                 action="admin_update_user",
                 description="Admin-only generic field update",
-                path_parameters=["user_id"],
-                auth_required=True,
-                allowed_groups=["Admin"]  # Admin-only operation
+                path_parameters=["user_id"]
             ),
             
             # Content Management Routes
@@ -104,18 +91,14 @@ class KnowlioApiRoutes:
                 processor_name="content",
                 action="upload_content_metadata",
                 description="Upload content metadata",
-                auth_required=True,
-                allowed_groups=["Admin", "Publisher"]  # Publishers can upload content
             ),
             ApiRoute(
-                method="GET",
-                path="content/{content_id}",
+                method="POST",
+                path="content/{content_id}/get",
                 processor_name="content",
                 action="get_content_details",
-                description="Get content details by ID",
-                path_parameters=["content_id"],
-                auth_required=True,
-                allowed_groups=None  # All authenticated users can view content
+                description="Get content details by ID (POST)",
+                path_parameters=["content_id"]
             ),
             ApiRoute(
                 method="PUT",
@@ -123,9 +106,7 @@ class KnowlioApiRoutes:
                 processor_name="content",
                 action="update_content_metadata",
                 description="Update content metadata",
-                path_parameters=["content_id"],
-                auth_required=True,
-                allowed_groups=["Admin", "Publisher"]  # Publishers can update their content
+                path_parameters=["content_id"]
             ),
             ApiRoute(
                 method="PATCH",
@@ -133,36 +114,15 @@ class KnowlioApiRoutes:
                 processor_name="content",
                 action="update_content_attribute",
                 description="Update a single content attribute",
-                path_parameters=["content_id", "attribute"],
-                auth_required=True,
-                allowed_groups=["Admin", "Publisher"]  # Publishers can update attributes
+                path_parameters=["content_id", "attribute"]
             ),
-            ApiRoute(
-                method="GET",
-                path="content",
-                processor_name="content",
-                action="list_content_by_publisher",
-                description="List content by publisher with pagination",
-                query_parameters=["publisher_id", "limit", "pagination_token"],
-                auth_required=True,
-                allowed_groups=None  # All authenticated users can list content
-            ),
-            ApiRoute(
-                method="GET",
-                path="content/filter",
-                processor_name="content",
-                action="list_content_by_publisher_and_type",
-                description="List content by publisher and content type with pagination",
-                query_parameters=["publisher_id", "content_type", "limit", "pagination_token"]
-            ),
+            # Combined content search endpoint
             ApiRoute(
                 method="POST",
                 path="content/search",
                 processor_name="content",
                 action="search_content",
-                description="Search content with flexible parameters and pagination",
-                auth_required=True,
-                allowed_groups=None  # All authenticated users can search content
+                description="Search content with flexible parameters and pagination (supports all query formats)",
             ),
             ApiRoute(
                 method="POST",
@@ -170,20 +130,7 @@ class KnowlioApiRoutes:
                 processor_name="content",
                 action="archive_content",
                 description="Archive content",
-                path_parameters=["content_id"],
-                auth_required=True,
-                allowed_groups=["Admin", "Publisher"]  # Publishers can archive their content
-            ),
-            ApiRoute(
-                method="GET",
-                path="content/query/{attribute}/{value}",
-                processor_name="content",
-                action="query_by_attribute",
-                description="Query content by any attribute",
-                path_parameters=["attribute", "value"],
-                query_parameters=["limit", "pagination_token"],
-                auth_required=True,
-                allowed_groups=None  # All authenticated users can query content
+                path_parameters=["content_id"]
             ),
             
             # License Management Routes
@@ -193,38 +140,21 @@ class KnowlioApiRoutes:
                 processor_name="license",
                 action="create_license",
                 description="Create a new license",
-                auth_required=True,
-                allowed_groups=["Admin", "Publisher"]  # Publishers can create licenses
             ),
             ApiRoute(
-                method="GET",
-                path="licenses/{license_id}",
+                method="POST",
+                path="licenses/{license_id}/get",
                 processor_name="license",
                 action="get_license",
-                description="Get license by ID",
-                path_parameters=["license_id"],
-                auth_required=True,
-                allowed_groups=None  # All authenticated users can view licenses
+                description="Get license by ID (POST)",
+                path_parameters=["license_id"]
             ),
             ApiRoute(
-                method="GET",
-                path="licenses",
+                method="POST",
+                path="licenses/search",
                 processor_name="license",
-                action="list_licenses_by_consumer",
-                description="List licenses by consumer",
-                query_parameters=["consumer_id"],
-                auth_required=True,
-                allowed_groups=None  # Users can view their own licenses
-            ),
-            ApiRoute(
-                method="GET",
-                path="licenses/content/{content_id}",
-                processor_name="license",
-                action="list_licenses_by_content",
-                description="List licenses by content",
-                path_parameters=["content_id"],
-                auth_required=True,
-                allowed_groups=["Admin", "Publisher"]  # Publishers can view licenses for their content
+                action="search_licenses",
+                description="Search licenses with flexible parameters and pagination",
             ),
             ApiRoute(
                 method="POST",
@@ -232,9 +162,7 @@ class KnowlioApiRoutes:
                 processor_name="license",
                 action="revoke_license",
                 description="Revoke a license",
-                path_parameters=["license_id"],
-                auth_required=True,
-                allowed_groups=["Admin", "Publisher"]  # Publishers can revoke licenses
+                path_parameters=["license_id"]
             ),
             
             # Analytics Routes
@@ -244,73 +172,56 @@ class KnowlioApiRoutes:
                 processor_name="analytics",
                 action="log_content_access",
                 description="Log content access",
-                auth_required=True,
-                allowed_groups=None  # All authenticated users can log access
             ),
             ApiRoute(
-                method="GET",
-                path="analytics/content/{content_id}",
+                method="POST",
+                path="analytics/content/{content_id}/report",
                 processor_name="analytics",
                 action="get_usage_report_by_content",
-                description="Get usage report by content",
-                path_parameters=["content_id"],
-                auth_required=True,
-                allowed_groups=["Admin", "Publisher"]  # Publishers can view analytics for their content
+                description="Get usage report by content (POST)",
+                path_parameters=["content_id"]
             ),
             ApiRoute(
-                method="GET",
-                path="analytics/consumer/{consumer_id}",
+                method="POST",
+                path="analytics/consumer/{consumer_id}/report",
                 processor_name="analytics",
                 action="get_usage_report_by_consumer",
-                description="Get usage report by consumer",
-                path_parameters=["consumer_id"],
-                auth_required=True,
-                allowed_groups=None  # Users can view their own usage reports
+                description="Get usage report by consumer (POST)",
+                path_parameters=["consumer_id"]
             ),
             
             # Google Books API Routes
             ApiRoute(
-                method="GET",
-                path="books/{isbn}",
+                method="POST",
+                path="books/{isbn}/details",
                 processor_name="google_books",
                 action="get_book_details",
-                description="Get complete book details by ISBN",
-                path_parameters=["isbn"],
-                auth_required=True,
-                allowed_groups=None  # All authenticated users can access book details
+                description="Get complete book details by ISBN (POST)",
+                path_parameters=["isbn"]
             ),
             ApiRoute(
-                method="GET",
+                method="POST",
                 path="books/{isbn}/filtered",
                 processor_name="google_books",
                 action="get_book_details_filtered",
-                description="Get filtered book details by ISBN",
-                path_parameters=["isbn"],
-                query_parameters=["fields"],
-                auth_required=True,
-                allowed_groups=None  # All authenticated users can access book details
+                description="Get filtered book details by ISBN (POST)",
+                path_parameters=["isbn"]
             ),
             ApiRoute(
-                method="GET",
-                path="books/author/{author_name}",
+                method="POST",
+                path="books/author/{author_name}/search",
                 processor_name="google_books",
                 action="get_books_by_author",
-                description="Get all books by a specific author",
-                path_parameters=["author_name"],
-                query_parameters=["max_results"],
-                auth_required=True,
-                allowed_groups=None  # All authenticated users can search by author
+                description="Get all books by a specific author (POST)",
+                path_parameters=["author_name"]
             ),
             ApiRoute(
-                method="GET",
+                method="POST",
                 path="books/author/{author_name}/filtered",
                 processor_name="google_books",
                 action="get_books_by_author_filtered",
-                description="Get filtered book details for all books by a specific author",
-                path_parameters=["author_name"],
-                query_parameters=["fields", "max_results"],
-                auth_required=True,
-                allowed_groups=None  # All authenticated users can search by author
+                description="Get filtered book details for all books by a specific author (POST)",
+                path_parameters=["author_name"]
             ),
             
             # S3 Upload Routes
@@ -319,19 +230,15 @@ class KnowlioApiRoutes:
                 path="uploads/url",
                 processor_name="s3_upload",
                 action="generate_presigned_upload_url",
-                description="Generate a presigned URL for direct file upload to S3",
-                auth_required=True,
-                allowed_groups=["Admin", "Publisher"]  # Publishers can upload files
+                description="Generate a presigned URL for direct file upload to S3"
             ),
             ApiRoute(
-                method="GET",
+                method="POST",
                 path="uploads/download/{key}",
                 processor_name="s3_upload",
                 action="generate_presigned_download_url",
-                description="Generate a presigned URL for file download from S3",
-                path_parameters=["key"],
-                auth_required=True,
-                allowed_groups=None  # All authenticated users can download (with proper permissions)
+                description="Generate a presigned URL for file download from S3 (POST)",
+                path_parameters=["key"]
             ),
             
             # S3 Multipart Upload Routes
@@ -340,45 +247,35 @@ class KnowlioApiRoutes:
                 path="uploads/multipart/init",
                 processor_name="s3_upload",
                 action="initiate_multipart_upload",
-                description="Initiate a multipart upload process",
-                auth_required=True,
-                allowed_groups=["Admin", "Publisher"]  # Publishers can initiate multipart uploads
+                description="Initiate a multipart upload process"
             ),
             ApiRoute(
                 method="POST",
                 path="uploads/multipart/part-url",
                 processor_name="s3_upload",
                 action="generate_presigned_part_upload_url",
-                description="Generate a presigned URL for uploading a specific part",
-                auth_required=True,
-                allowed_groups=["Admin", "Publisher"]  # Publishers can upload parts
+                description="Generate a presigned URL for uploading a specific part"
             ),
             ApiRoute(
                 method="POST",
                 path="uploads/multipart/complete",
                 processor_name="s3_upload",
                 action="complete_multipart_upload",
-                description="Complete a multipart upload after all parts have been uploaded",
-                auth_required=True,
-                allowed_groups=["Admin", "Publisher"]  # Publishers can complete uploads
+                description="Complete a multipart upload after all parts have been uploaded"
             ),
             ApiRoute(
                 method="DELETE",
                 path="uploads/multipart/abort",
                 processor_name="s3_upload",
                 action="abort_multipart_upload",
-                description="Abort a multipart upload and remove any uploaded parts",
-                auth_required=True,
-                allowed_groups=["Admin", "Publisher"]  # Publishers can abort uploads
+                description="Abort a multipart upload and remove any uploaded parts"
             ),
             ApiRoute(
-                method="GET",
-                path="uploads/multipart/parts",
+                method="POST",
+                path="uploads/multipart/parts/list",
                 processor_name="s3_upload",
                 action="list_parts",
-                description="List all parts that have been uploaded for a specific multipart upload",
-                auth_required=True,
-                allowed_groups=["Admin", "Publisher"]  # Publishers can list parts
+                description="List all parts that have been uploaded for a specific multipart upload (POST)"
             ),
         ]
     
@@ -395,16 +292,3 @@ class KnowlioApiRoutes:
             if route.method == method and route.path == path:
                 return route
         return None
-
-    @staticmethod
-    def get_routes_by_group(group_name: str) -> List[ApiRoute]:
-        """Get all routes accessible by a specific group"""
-        routes = []
-        for route in KnowlioApiRoutes.get_all_routes():
-            if not route.auth_required:
-                continue  # Skip unauthenticated routes
-            if route.allowed_groups is None:
-                routes.append(route)  # All authenticated users can access
-            elif group_name in route.allowed_groups:
-                routes.append(route)  # Specific group can access
-        return routes

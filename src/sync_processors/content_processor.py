@@ -22,13 +22,78 @@ class ContentProcessor(BaseProcessor):
             "get_content_details": self._get_content_details,
             "update_content_metadata": self._update_content_metadata,
             "update_content_attribute": self._update_content_attribute,
-            "list_content_by_publisher": self._list_content_by_publisher,
-            "list_content_by_publisher_and_type": self._list_content_by_publisher_and_type,
             "archive_content": self._archive_content,
             "search_content": self._search_content,
-            "query_by_attribute": self._query_by_attribute,
-            "query_by_attributes": self._query_by_attributes,
         })
+        
+    def _validate_workflow_status_fields(self, params_dict: Dict) -> Dict:
+        """
+        Validate workflow status fields in the provided dictionary.
+        
+        Args:
+            params_dict: Dictionary containing parameters that may include workflow status fields
+            
+        Returns:
+            Error dictionary if validation fails, None if validation passes
+        """
+        # Define the workflow status fields directly to avoid issues with the enum
+        status_fields = ["rag_status", "training_status", "licensing_status"]
+        
+        for status_field in status_fields:
+            if status_field in params_dict and not WorkflowStatus.is_valid(params_dict[status_field]):
+                valid_statuses = ", ".join(WorkflowStatus.get_valid_statuses())
+                return {"error": f"Invalid {status_field}: {params_dict[status_field]}. Valid values: {valid_statuses}"}
+        return None
+    
+    def _validate_content_status(self, params_dict: Dict) -> Dict:
+        """
+        Validate content status field in the provided dictionary.
+        
+        Args:
+            params_dict: Dictionary containing parameters that may include content status
+            
+        Returns:
+            Error dictionary if validation fails, None if validation passes
+        """
+        if "status" in params_dict and not ContentStatus.is_valid(params_dict["status"]):
+            valid_statuses = ", ".join(ContentStatus.get_valid_statuses())
+            return {"error": f"Invalid status: {params_dict['status']}. Valid statuses: {valid_statuses}"}
+        return None
+    
+    def _validate_content_type(self, params_dict: Dict) -> Dict:
+        """
+        Validate content type field in the provided dictionary.
+        
+        Args:
+            params_dict: Dictionary containing parameters that may include content type
+            
+        Returns:
+            Error dictionary if validation fails, None if validation passes
+        """
+        if "type" in params_dict and not ContentType.is_valid(params_dict["type"]):
+            valid_types = ", ".join(ContentType.get_valid_types())
+            return {"error": f"Invalid type: {params_dict['type']}. Valid types: {valid_types}"}
+        return None
+    
+    def _add_pagination_to_response(self, result: Dict, response: Dict) -> Dict:
+        """
+        Add pagination details to response if available in the result.
+        
+        Args:
+            result: Result dictionary from helper method
+            response: Response dictionary being constructed for API
+            
+        Returns:
+            Updated response with pagination details added if available
+        """
+        # Add pagination details if available
+        if "pagination_token" in result:
+            response["pagination"] = {
+                "next_token": result["pagination_token"],
+                "has_more": result.get("has_more", False)
+            }
+                
+        return response
 
     def _upload_content_metadata(self, payload: Dict) -> Dict:
         """
@@ -110,7 +175,9 @@ class ContentProcessor(BaseProcessor):
                     pass
                     
             # Convert workflow status string values to enum values if present
-            for field in ["rag_status", "training_status", "licensing_status"]:
+            # Use the direct list instead of the enum attribute to avoid iteration errors
+            status_fields = ["rag_status", "training_status", "licensing_status"]
+            for field in status_fields:
                 if field in payload["updates"]:
                     status = payload["updates"][field]
                     if isinstance(status, str) and WorkflowStatus.is_valid(status):
@@ -146,16 +213,20 @@ class ContentProcessor(BaseProcessor):
             value = payload["value"]
             
             # Validate workflow status attributes against enum values
-            if attribute in ["rag_status", "training_status", "licensing_status"]:
-                if not WorkflowStatus.is_valid(value):
-                    valid_values = ", ".join(WorkflowStatus.get_valid_statuses())
-                    return {"error": f"Invalid {attribute} value: {value}. Valid values: {valid_values}"}
+            if attribute in WorkflowStatus.WORKFLOW_STATUS_FIELDS:
+                # Create a temporary dictionary with the attribute and value
+                temp_dict = {attribute: value}
+                error = self._validate_workflow_status_fields(temp_dict)
+                if error:
+                    return error
             
             # Validate status attribute against enum values
             if attribute == "status":
-                if not ContentStatus.is_valid(value):
-                    valid_values = ", ".join(ContentStatus.get_valid_statuses())
-                    return {"error": f"Invalid status value: {value}. Valid values: {valid_values}"}
+                # Create a temporary dictionary with the status and value
+                temp_dict = {"status": value}
+                error = self._validate_content_status(temp_dict)
+                if error:
+                    return error
             
             return self.helper.update_content_attribute(
                 content_id=payload["content_id"],
@@ -168,106 +239,6 @@ class ContentProcessor(BaseProcessor):
         except Exception as e:
             logger.error(f"Error updating content attribute: {str(e)}")
             return {"error": f"Failed to update content attribute: {str(e)}"}
-
-    def _list_content_by_publisher(self, payload: Dict) -> Dict:
-        """
-        List content by publisher with pagination support.
-        
-        Required payload keys:
-        - publisher_id: ID of the publisher to list content for
-        
-        Optional payload keys:
-        - limit: Maximum number of items to return
-        - pagination_token: Token for retrieving the next page of results
-        """
-        try:
-            require_keys(payload, ["publisher_id"])
-            
-            # Extract pagination parameters if provided
-            limit = payload.get("limit")
-            pagination_token = payload.get("pagination_token")
-            
-            result = self.helper.list_content_by_publisher(
-                publisher_id=payload["publisher_id"],
-                limit=limit,
-                pagination_token=pagination_token
-            )
-            
-            # Handle error case
-            if "error" in result:
-                return {"error": result["error"]}
-            
-            # Convert result structure to standardized format
-            response = {
-                "contents": result.get("items", []),
-                "count": result.get("count", 0)
-            }
-            
-            # Add pagination details if available
-            if "pagination_token" in result:
-                response["pagination"] = {
-                    "next_token": result["pagination_token"],
-                    "has_more": result.get("has_more", False)
-                }
-                
-            return response
-        except Exception as e:
-            logger.error(f"Error listing content: {str(e)}")
-            return {"error": f"Failed to list content: {str(e)}"}
-
-    def _list_content_by_publisher_and_type(self, payload: Dict) -> Dict:
-        """
-        List content by publisher and content type with pagination support.
-        
-        Required payload keys:
-        - publisher_id: ID of the publisher to list content for
-        - content_type: Content type to filter by (from ContentType enum)
-        
-        Optional payload keys:
-        - limit: Maximum number of items to return
-        - pagination_token: Token for retrieving the next page of results
-        """
-        try:
-            require_keys(payload, ["publisher_id", "content_type"])
-            
-            # Validate content_type parameter
-            content_type = payload["content_type"]
-            if not ContentType.is_valid(content_type):
-                valid_types = ", ".join(ContentType.get_valid_types())
-                return {"error": f"Invalid content_type: {content_type}. Valid types: {valid_types}"}
-            
-            # Extract pagination parameters if provided
-            limit = payload.get("limit")
-            pagination_token = payload.get("pagination_token")
-            
-            result = self.helper.list_content_by_publisher_and_type(
-                publisher_id=payload["publisher_id"],
-                content_type=content_type,
-                limit=limit,
-                pagination_token=pagination_token
-            )
-            
-            # Handle error case
-            if "error" in result:
-                return {"error": result["error"]}
-            
-            # Convert result structure to standardized format
-            response = {
-                "contents": result.get("items", []),
-                "count": result.get("count", 0)
-            }
-            
-            # Add pagination details if available
-            if "pagination_token" in result:
-                response["pagination"] = {
-                    "next_token": result["pagination_token"],
-                    "has_more": result.get("has_more", False)
-                }
-                
-            return response
-        except Exception as e:
-            logger.error(f"Error listing content by publisher and type: {str(e)}")
-            return {"error": f"Failed to list content by publisher and type: {str(e)}"}
 
     def _archive_content(self, payload: Dict) -> Dict:
         """
@@ -288,195 +259,73 @@ class ContentProcessor(BaseProcessor):
         
     def _search_content(self, payload: Dict) -> Dict:
         """
-        Search for content based on flexible parameters with pagination support.
+        Unified search method for content that handles all supported formats:
+        1. list_content_by_publisher: {"publisher_id": "pub123", ...}
+        2. list_content_by_publisher_and_type: {"publisher_id": "pub123", "content_type": "BOOK", ...}
+        3. search_content: {any field combinations without the attributes wrapper}
+        4. Legacy format: {"attributes": {field combinations}, ...}
         
-        Optional payload keys:
-        - Any combination of content fields or metadata
-        - limit: Maximum number of results to return
-        - pagination_token: Token for retrieving the next page of results
-                
-        Examples:
-        - Search by type: {"type": ContentType.BOOK.value}
-        - Search by status: {"status": ContentStatus.ACTIVE.value}
-        - Search by title pattern: {"title": "python"}
-        - Search by metadata: {"metadata.isbn": "1234567890"}
-        - Search by workflow status: {"rag_status": WorkflowStatus.ENABLED.value}
-        """
-        try:
-            # Extract pagination parameters
-            search_params = payload.copy()
-            limit = search_params.pop("limit", None)
-            pagination_token = search_params.pop("pagination_token", None)
-            
-            # Validate status parameters if provided
-            if "status" in search_params and not ContentStatus.is_valid(search_params["status"]):
-                valid_statuses = ", ".join(ContentStatus.get_valid_statuses())
-                return {"error": f"Invalid status: {search_params['status']}. Valid statuses: {valid_statuses}"}
-                
-            # Validate workflow status parameters if provided
-            for status_field in ["rag_status", "training_status", "licensing_status"]:
-                if status_field in search_params and not WorkflowStatus.is_valid(search_params[status_field]):
-                    valid_statuses = ", ".join(WorkflowStatus.get_valid_statuses())
-                    return {"error": f"Invalid {status_field}: {search_params[status_field]}. Valid values: {valid_statuses}"}
-                    
-            # Validate type parameter if provided
-            if "type" in search_params and not ContentType.is_valid(search_params["type"]):
-                valid_types = ", ".join(ContentType.get_valid_types())
-                return {"error": f"Invalid type: {search_params['type']}. Valid types: {valid_types}"}
-            
-            # Execute search with remaining parameters as filters
-            search_result = self.helper.search_content(
-                search_params=search_params,
-                limit=limit,
-                pagination_token=pagination_token
-            )
-            
-            # Handle error case
-            if "error" in search_result:
-                return {"error": search_result["error"]}
-            
-            # Convert result structure to standardized format
-            response = {
-                "contents": search_result.get("items", []),
-                "count": search_result.get("count", 0),
-                "total_scanned": search_result.get("total_scanned", 0)
-            }
-            
-            # Add pagination details if available
-            if "pagination_token" in search_result:
-                response["pagination"] = {
-                    "next_token": search_result["pagination_token"],
-                    "has_more": search_result.get("has_more", False)
-                }
-                
-            return response
-        except Exception as e:
-            logger.error(f"Error searching content: {str(e)}")
-            return {"error": f"Failed to search content: {str(e)}"}
-
-    def _query_by_attribute(self, payload: Dict) -> Dict:
-        """
-        Generic attribute-based query method.
-        
-        Required payload keys:
-        - attribute: Attribute name to query by
-        - value: Value to match
-        
-        Optional payload keys:
-        - limit: Maximum number of results to return
-        - pagination_token: Token for retrieving the next page of results
-        
-        Examples:
-        - Query by workflow status: {"attribute": "rag_status", "value": WorkflowStatus.ENABLED.value}
-        - Query by content type: {"attribute": "type", "value": ContentType.BOOK.value}
-        """
-        try:
-            require_keys(payload, ["attribute", "value"])
-            
-            # Extract parameters
-            attribute = payload["attribute"]
-            value = payload["value"]
-            limit = payload.get("limit")
-            pagination_token = payload.get("pagination_token")
-            
-            # Validate status values if applicable
-            if attribute == "status" and not ContentStatus.is_valid(value):
-                valid_statuses = ", ".join(ContentStatus.get_valid_statuses())
-                return {"error": f"Invalid status value: {value}. Valid statuses: {valid_statuses}"}
-                
-            # Validate workflow status values if applicable
-            if attribute in ["rag_status", "training_status", "licensing_status"] and not WorkflowStatus.is_valid(value):
-                valid_statuses = ", ".join(WorkflowStatus.get_valid_statuses())
-                return {"error": f"Invalid {attribute} value: {value}. Valid values: {valid_statuses}"}
-                
-            # Validate type value if applicable
-            if attribute == "type" and not ContentType.is_valid(value):
-                valid_types = ", ".join(ContentType.get_valid_types())
-                return {"error": f"Invalid type value: {value}. Valid types: {valid_types}"}
-            
-            # Perform the query
-            result = self.helper.query_by_attribute(
-                attribute=attribute,
-                value=value,
-                limit=limit,
-                pagination_token=pagination_token
-            )
-            
-            # Handle error case
-            if "error" in result:
-                return {"error": result["error"]}
-            
-            # Convert result structure to standardized format
-            response = {
-                "contents": result.get("items", []),
-                "count": result.get("count", 0),
-                "total_scanned": result.get("total_scanned", 0)
-            }
-            
-            # Add pagination details if available
-            if "pagination_token" in result:
-                response["pagination"] = {
-                    "next_token": result["pagination_token"],
-                    "has_more": result.get("has_more", False)
-                }
-                
-            return response
-        except Exception as e:
-            logger.error(f"Error querying content: {str(e)}")
-            return {"error": f"Failed to query content: {str(e)}"}
-            
-    def _query_by_attributes(self, payload: Dict) -> Dict:
-        """
-        Query content by multiple attributes simultaneously with pagination support.
-        
-        Required payload keys:
-        - attributes: Dictionary of attribute-value pairs to filter by
-        
-        Optional payload keys:
+        All formats support pagination with:
         - limit: Maximum number of items to return
         - pagination_token: Token for retrieving the next page of results
-        
-        Example payload:
-        {
-            "attributes": {
-                "publisher_id": "publisher-123",
-                "type": "BOOK",
-                "status": "ACTIVE"
-            },
-            "limit": 10,
-            "pagination_token": "base64encodedtoken"
-        }
         """
         try:
-            require_keys(payload, ["attributes"])
-            
-            # Make sure attributes is a dictionary
-            attributes = payload.get("attributes")
-            if not isinstance(attributes, dict):
-                return {"error": "The 'attributes' field must be a dictionary of attribute-value pairs"}
-                
-            # Extract pagination parameters if provided
+            # Handle different payload formats based on the action that was called
+            action = payload.get("__action__", "search_content")
+            search_params = {}
             limit = payload.get("limit")
             pagination_token = payload.get("pagination_token")
             
-            # Validate each attribute according to its type
-            search_params = attributes.copy()
+            # Format 1: list_content_by_publisher
+            if action == "list_content_by_publisher":
+                require_keys(payload, ["publisher_id"])
+                search_params = {"publisher_id": payload["publisher_id"]}
+            
+            # Format 2: list_content_by_publisher_and_type
+            elif action == "list_content_by_publisher_and_type":
+                require_keys(payload, ["publisher_id", "content_type"])
+                content_type = payload["content_type"]
+                
+                # Validate content_type parameter
+                if not ContentType.is_valid(content_type):
+                    valid_types = ", ".join(ContentType.get_valid_types())
+                    return {"error": f"Invalid content_type: {content_type}. Valid types: {valid_types}"}
+                
+                search_params = {
+                    "publisher_id": payload["publisher_id"],
+                    "type": content_type
+                }
+                
+            # Format 3: search_content (direct parameters)
+            elif action == "search_content":
+                # Check for attributes format first (legacy support)
+                if "attributes" in payload:
+                    attributes = payload.get("attributes")
+                    if not isinstance(attributes, dict):
+                        return {"error": "The 'attributes' field must be a dictionary of attribute-value pairs"}
+                    search_params = attributes.copy()
+                else:
+                    # Use all parameters directly as search criteria
+                    search_params = payload.copy()
+                    # Remove pagination parameters
+                    search_params.pop("limit", None)
+                    search_params.pop("pagination_token", None)
+                    search_params.pop("__action__", None)
             
             # Validate status parameter if provided
-            if "status" in search_params and not ContentStatus.is_valid(search_params["status"]):
-                valid_statuses = ", ".join(ContentStatus.get_valid_statuses())
-                return {"error": f"Invalid status: {search_params['status']}. Valid statuses: {valid_statuses}"}
+            error = self._validate_content_status(search_params)
+            if error:
+                return error
                 
             # Validate workflow status parameters if provided
-            for status_field in ["rag_status", "training_status", "licensing_status"]:
-                if status_field in search_params and not WorkflowStatus.is_valid(search_params[status_field]):
-                    valid_statuses = ", ".join(WorkflowStatus.get_valid_statuses())
-                    return {"error": f"Invalid {status_field}: {search_params[status_field]}. Valid values: {valid_statuses}"}
+            error = self._validate_workflow_status_fields(search_params)
+            if error:
+                return error
                     
             # Validate type parameter if provided
-            if "type" in search_params and not ContentType.is_valid(search_params["type"]):
-                valid_types = ", ".join(ContentType.get_valid_types())
-                return {"error": f"Invalid type: {search_params['type']}. Valid types: {valid_types}"}
+            error = self._validate_content_type(search_params)
+            if error:
+                return error
             
             # Execute search with the provided attributes
             search_result = self.helper.search_content(
@@ -489,21 +338,18 @@ class ContentProcessor(BaseProcessor):
             if "error" in search_result:
                 return {"error": search_result["error"]}
             
-            # Convert result structure to standardized format
+            # Convert result structure to standardized format including pagination
             response = {
                 "contents": search_result.get("items", []),
                 "count": search_result.get("count", 0),
                 "total_scanned": search_result.get("total_scanned", 0)
             }
             
-            # Add pagination details if available
-            if "pagination_token" in search_result:
-                response["pagination"] = {
-                    "next_token": search_result["pagination_token"],
-                    "has_more": search_result.get("has_more", False)
-                }
+            # Include pagination information directly in response
+            if "pagination" in search_result:
+                response["pagination"] = search_result["pagination"]
                 
             return response
         except Exception as e:
-            logger.error(f"Error querying content by attributes: {str(e)}")
-            return {"error": f"Failed to query content by attributes: {str(e)}"}
+            logger.error(f"Error searching content: {str(e)}")
+            return {"error": f"Failed to search content: {str(e)}"}

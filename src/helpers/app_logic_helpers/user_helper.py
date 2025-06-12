@@ -6,6 +6,7 @@ from helpers.aws_service_helpers.dynamodb_helper import DynamoDBHelper
 from helpers.common_helper.logger_helper import LoggerHelper
 from helpers.common_helper.common_helper import Retry
 from helpers.common_helper.auth_helper import RoleBasedAuth, AuthorizationError
+from helpers.common_helper.pagination_helper import PaginationHelper
 from models.user_model import UserModel
 import botocore.exceptions
 
@@ -125,35 +126,6 @@ class UserHelper:
         return self.db.update_item("user_id", user_id, updates)
 
     @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
-    def list_users_by_role(self, role: str, limit: int = None, pagination_token: str = None) -> Dict:
-        """
-        List users by role with pagination.
-        
-        Args:
-            role: Role to filter by
-            limit: Maximum number of items to return
-            pagination_token: Token for pagination
-            
-        Returns:
-            Dict with users and pagination info
-            
-        Raises:
-            UserValidationError: If role is invalid
-        """
-        if not RoleBasedAuth.validate_role(role):
-            valid_roles = ", ".join(RoleBasedAuth.VALID_ROLES)
-            raise UserValidationError(f"Invalid role: {role}. Valid roles: {valid_roles}")
-            
-        logger.info("Listing users with role: %s (limit: %s)", role, limit)
-        
-        return self.db.query_items(
-            key_name="role", 
-            key_value=role,
-            limit=limit,
-            last_evaluated_key=self._decode_pagination_token(pagination_token)
-        )
-        
-    @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
     def search_users(self, search_params: Dict, limit: int = None, pagination_token: str = None) -> Dict:
         """
         Generic search users method that can handle various criteria.
@@ -199,17 +171,20 @@ class UserHelper:
             )
         
         # Apply additional filters based on search_params
+        filtered_items = []
         if search_params:
-            filtered_items = []
             for item in base_result.get("items", []):
                 if self._matches_search_criteria(item, search_params):
                     filtered_items.append(item)
+        else:
+            # If no additional filters, use all items
+            filtered_items = base_result.get("items", [])
             
-            # Update the results with filtered items
-            base_result["items"] = filtered_items
-            base_result["count"] = len(filtered_items)
+        # Use the common pagination helper to apply search filters and format results
+        result = PaginationHelper.apply_search_filters(base_result, filtered_items, search_params)
         
-        return base_result
+        # Apply standard pagination encoding
+        return PaginationHelper.encode_pagination_result(result)
         
     @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
     def admin_update_user(self, user_id: str, field: str, value: Any) -> Dict:
@@ -286,6 +261,10 @@ class UserHelper:
             True if matches all criteria, False otherwise
         """
         for key, value in search_params.items():
+            # Skip system fields (starting with underscore) like _headers
+            if key.startswith('_') or key == '__action__':
+                continue
+                
             # Handle nested keys like metadata.field
             if "." in key:
                 parts = key.split(".")
@@ -308,6 +287,7 @@ class UserHelper:
                 elif item[key] != value:
                     return False
             else:
+                logger.debug(f"Field '{key}' not found in item: {item}")
                 return False
                 
         return True
@@ -322,14 +302,16 @@ class UserHelper:
         Returns:
             Decoded last_evaluated_key or None if no token
         """
-        if not pagination_token:
-            return None
+        return PaginationHelper.decode_pagination_token(pagination_token)
             
-        try:
-            import json
-            import base64
-            decoded_token = base64.b64decode(pagination_token)
-            return json.loads(decoded_token)
-        except Exception as e:
-            logger.error(f"Failed to decode pagination token: {e}")
-            raise ValueError(f"Invalid pagination token: {pagination_token}")
+    def _encode_pagination_result(self, result: Dict) -> Dict:
+        """
+        Encode pagination information in a result dictionary.
+        
+        Args:
+            result: Dictionary containing query/scan result with last_evaluated_key
+            
+        Returns:
+            Result with encoded pagination_token and proper pagination structure
+        """
+        return PaginationHelper.encode_pagination_result(result)

@@ -18,7 +18,6 @@ class UserProcessor(BaseProcessor):
             "register_user": self._register_user,
             "get_user_profile": self._get_user_profile,
             "update_user_profile": self._update_user_profile,
-            "list_users_by_role": self._list_users_by_role,
             "search_users": self._search_users,
             "admin_update_user": self._admin_update_user,
         })
@@ -96,48 +95,6 @@ class UserProcessor(BaseProcessor):
             logger.error(f"Error updating user profile: {str(e)}")
             return {"error": f"Failed to update user profile: {str(e)}"}
 
-    def _list_users_by_role(self, payload: Dict) -> Dict:
-        """
-        List users by role with pagination.
-        
-        Required payload keys:
-        - role: Role to filter by (PUBLISHER/CONSUMER/ADMIN)
-        
-        Optional payload keys:
-        - limit: Maximum number of items to return
-        - pagination_token: Token for retrieving the next page of results
-        """
-        try:
-            require_keys(payload, ["role"])
-            
-            role = payload["role"]
-            limit = payload.get("limit")
-            pagination_token = payload.get("pagination_token")
-            
-            result = self.helper.list_users_by_role(role, limit, pagination_token)
-            
-            # Rename items field to users for API consistency
-            response = {
-                "users": result.get("items", []),
-                "count": result.get("count", 0),
-                "total_scanned": result.get("scanned_count", 0),
-            }
-            
-            # Add pagination info if present
-            if "pagination_token" in result:
-                response["pagination"] = {
-                    "next_token": result["pagination_token"],
-                    "has_more": result.get("has_more", False)
-                }
-            
-            return response
-        except UserValidationError as e:
-            logger.warning(f"Invalid role in list users request: {str(e)}")
-            return {"error": str(e)}
-        except Exception as e:
-            logger.error(f"Error listing users: {str(e)}")
-            return {"error": f"Failed to list users: {str(e)}"}
-    
     def _search_users(self, payload: Dict) -> Dict:
         """
         Search for users with various criteria.
@@ -163,12 +120,9 @@ class UserProcessor(BaseProcessor):
                 "total_scanned": result.get("scanned_count", 0),
             }
             
-            # Add pagination info if present
-            if "pagination_token" in result:
-                response["pagination"] = {
-                    "next_token": result["pagination_token"],
-                    "has_more": result.get("has_more", False)
-                }
+            # Include pagination information directly from the helper result
+            if "pagination" in result:
+                response["pagination"] = result["pagination"]
             
             return response
         except Exception as e:
