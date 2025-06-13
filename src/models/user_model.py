@@ -1,6 +1,6 @@
 
 from datetime import datetime
-from typing import Dict
+from typing import Dict, Optional
 import uuid
 
 
@@ -14,3 +14,8 @@ class UserModel:
         self.auth_provider: str = user_data.get("auth_provider", "COGNITO")
         self.created_at: str = datetime.utcnow().isoformat()
         self.metadata: Dict = user_data.get("metadata", {})
+        
+        # AI Training consent fields
+        self.ai_training_consent: bool = user_data.get("ai_training_consent", False)
+        self.ai_training_consent_date: Optional[str] = user_data.get("ai_training_consent_date")
+        self.ai_training_agreement_version: Optional[str] = user_data.get("ai_training_agreement_version")
