@@ -34,51 +34,21 @@ class KnowlioApiConfig:
     
     @staticmethod
     def get_route_definitions() -> List[RouteDefinition]:
-        """Convert KnowlioApiRoutes to generic RouteDefinition format."""
+        """Convert KnowlioApiRoutes to generic RouteDefinition format with authentication."""
         knowlio_routes = KnowlioApiRoutes.get_all_routes()
         
-        # Group common routes by method to reduce IAM policy size
-        # Use method-based grouping instead of path wildcards since API Gateway doesn't allow * in paths
         route_definitions = []
-        processed_paths = set()
         
-        # First pass: Add routes with greedy path parameters where possible
-        # API Gateway allows {proxy+} for greedy path parameters
-        for path_base in ["users", "content", "licenses", "analytics", "books", "uploads"]:
-            # Add base path with greedy parameter for each HTTP method
-            for method in ["GET", "POST", "PUT", "DELETE", "PATCH"]:
-                # Check if any route matches this pattern
-                has_matching_routes = False
-                for route in knowlio_routes:
-                    if route.path.startswith(f"{path_base}/") and route.method == method:
-                        has_matching_routes = True
-                        break
-                
-                if has_matching_routes:
-                    # Add a greedy route for this base path and method
-                    route_def = RouteDefinition(
-                        method=method,
-                        # Use API Gateway's greedy path parameter syntax
-                        path=f"{path_base}/{{proxy+}}",
-                        description=f"{method} requests for {path_base}"
-                    )
-                    route_definitions.append(route_def)
-                    # Mark all matching routes as processed
-                    for route in knowlio_routes:
-                        if route.path.startswith(f"{path_base}/") and route.method == method:
-                            processed_paths.add(f"{route.method}:{route.path}")
-        
-        # Second pass: Add any routes that weren't covered by greedy paths
+        # Convert each KnowlioApiRoute to RouteDefinition
         for route in knowlio_routes:
-            route_key = f"{route.method}:{route.path}"
-            if route_key not in processed_paths:
-                route_def = RouteDefinition(
-                    method=route.method,
-                    path=route.path,
-                    description=route.description
-                )
-                route_definitions.append(route_def)
-                processed_paths.add(route_key)
+            route_def = RouteDefinition(
+                method=route.method,
+                path=route.path,
+                description=route.description,
+                auth_required=route.auth_required,
+                allowed_groups=route.allowed_groups
+            )
+            route_definitions.append(route_def)
         
         return route_definitions
     
@@ -91,7 +61,9 @@ class KnowlioApiConfig:
             "user": [],
             "content": [],
             "license": [],
-            "analytics": []
+            "analytics": [],
+            "google_books": [],
+            "s3_upload": []
         }
         
         for route in all_routes:
@@ -100,7 +72,9 @@ class KnowlioApiConfig:
                     "method": route.method,
                     "path": route.path,
                     "action": route.action,
-                    "description": route.description
+                    "description": route.description,
+                    "auth_required": route.auth_required,
+                    "allowed_groups": route.allowed_groups
                 })
         
         return categories
@@ -114,6 +88,9 @@ class KnowlioApiConfig:
             "total_routes": len(routes),
             "methods": {},
             "processors": {},
+            "auth_required_routes": 0,
+            "public_routes": 0,
+            "group_restricted_routes": {}
         }
         
         for route in routes:
@@ -122,5 +99,38 @@ class KnowlioApiConfig:
             
             # Count processors
             summary["processors"][route.processor_name] = summary["processors"].get(route.processor_name, 0) + 1
+            
+            # Count auth requirements
+            if route.auth_required:
+                summary["auth_required_routes"] += 1
+            else:
+                summary["public_routes"] += 1
+            
+            # Count group restrictions
+            if route.allowed_groups:
+                for group in route.allowed_groups:
+                    summary["group_restricted_routes"][group] = summary["group_restricted_routes"].get(group, 0) + 1
         
         return summary
+    
+    @staticmethod
+    def get_group_permissions_summary():
+        """Get a summary of which routes each group can access"""
+        groups = ["Admin", "Publisher", "Consumer"]
+        permissions = {}
+        
+        for group in groups:
+            accessible_routes = KnowlioApiRoutes.get_routes_by_group(group)
+            permissions[group] = {
+                "total_accessible_routes": len(accessible_routes),
+                "routes": [f"{route.method} {route.path}" for route in accessible_routes]
+            }
+        
+        # Add unauthenticated routes
+        public_routes = [route for route in KnowlioApiRoutes.get_all_routes() if not route.auth_required]
+        permissions["Unauthenticated"] = {
+            "total_accessible_routes": len(public_routes),
+            "routes": [f"{route.method} {route.path}" for route in public_routes]
+        }
+        
+        return permissions

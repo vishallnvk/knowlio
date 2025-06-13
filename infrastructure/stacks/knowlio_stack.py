@@ -45,7 +45,7 @@ class KnowlioStack(Stack):
             description="Role for Lambda to access DynamoDB, CloudWatch, S3 and Lambda invoke"
         ).role
         
-                
+
         """
         # Use the opensearch_stack resources instead of creating our own
         opensearch_collection_arn = opensearch_stack.collection_arn
@@ -62,7 +62,7 @@ class KnowlioStack(Stack):
         )
         
         lambda_role.add_to_policy(opensearch_policy)
-
+        
         # Create environment variables for Lambda to access OpenSearch Serverless
         opensearch_env = {
             "OPENSEARCH_ENDPOINT": opensearch_collection_endpoint,
@@ -71,9 +71,16 @@ class KnowlioStack(Stack):
             "OPENSEARCH_REGION": self.region,
             "OPENSEARCH_SERVERLESS": "true"  # Flag to indicate we're using serverless
         }
-        """
         
-        opensearch_env = ""
+        
+        # Add Cognito environment variables if auth stack is provided
+        if auth_stack:
+            opensearch_env.update({
+                "USER_POOL_ID": auth_stack.user_pool.user_pool_id,
+                "USER_POOL_CLIENT_ID": auth_stack.user_pool_client.user_pool_client_id,
+                "COGNITO_REGION": self.region
+            })
+        """
 
         # Create Lambda using LambdaConstruct with OpenSearch environment variables
         lambda_props = LambdaFunctionConstructProps(
@@ -82,7 +89,11 @@ class KnowlioStack(Stack):
             code_path="src",
             timeout_seconds=900,  # 15 minutes
             lambda_role=lambda_role,
-            environment=opensearch_env
+            environment={
+                "OPENSEARCH_INDEX_NAME": "content-index",  # Main index for content searching
+                "OPENSEARCH_REGION": self.region,
+                "OPENSEARCH_SERVERLESS": "true"  # Flag to indicate we're using serverless
+            }
         )
 
         lambda_fn = LambdaConstruct(self, "SyncHandlerConstruct", lambda_props)
@@ -91,12 +102,14 @@ class KnowlioStack(Stack):
         api_props = KnowlioApiConfig.get_api_gateway_props()
         api_routes = KnowlioApiConfig.get_route_definitions()
         
-        # Create API Gateway with generic construct
+        # Create API Gateway with generic construct, passing user pool for authentication
+        # Updated to use new parameter order for direct service integrations
         api_gateway = ApiGatewayConstruct(
             self, "KnowlioApiGateway",
-            lambda_function=lambda_fn.lambda_function,
             props=api_props,
-            routes=api_routes
+            routes=api_routes,
+            user_pool=auth_stack.user_pool,  # Pass user pool for authentication
+            lambda_function=lambda_fn.lambda_function  # Still pass lambda for backward compatibility
         )
         
         # Output the API URL
@@ -105,6 +118,22 @@ class KnowlioStack(Stack):
             value=api_gateway.api_url,
             description="Knowlio REST API Gateway URL",
             export_name="KnowlioApiUrl"
+        )
+        
+        # Output API summary information
+        api_summary = KnowlioApiConfig.get_api_summary()
+        CfnOutput(
+            self, "ApiSummary",
+            value=str(api_summary),
+            description="Summary of API routes and authentication requirements"
+        )
+        
+        # Output group permissions summary
+        group_permissions = KnowlioApiConfig.get_group_permissions_summary()
+        CfnOutput(
+            self, "GroupPermissions",
+            value=str(group_permissions),
+            description="Summary of API routes accessible by each group"
         )
         
         # Store references for potential cross-stack usage
