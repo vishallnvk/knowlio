@@ -37,16 +37,53 @@ class KnowlioApiConfig:
         """Convert KnowlioApiRoutes to generic RouteDefinition format with authentication."""
         knowlio_routes = KnowlioApiRoutes.get_all_routes()
         
+        # Maps processors to authorization requirements and groups
+        auth_mapping = {
+            # Processor name: (auth_required, allowed_groups)
+            "admin": (True, ["Admin"]),  # User management - Admin only by default
+            "users": (True, ["Admin", "Publisher", "Consumer"]),  # User management - Admin only by default
+            "books": (True, ["Admin", "Publisher"]),  # User management - Admin only by default
+            "content": (True, ["Admin", "Publisher"]),  # Content - Admin and Publisher
+            "licenses": (True, ["Admin", "Publisher", "Consumer"]),  # License - All authenticated users
+            "analytics": (True, ["Admin", "Publisher"]),  # Analytics - Admin and Publisher
+            "google_books": (True, ["Admin", "Publisher"]),  # Google Books - Admin and Publisher
+            "s3_upload": (True, ["Admin", "Publisher"])  # S3 Upload - Admin and Publisher
+        }
+        
+        # Routes that should be public regardless of processor
+        public_routes = [
+            # Public routes for registration/login
+            "register/"
+        ]
+        
+        # Admin-only routes regardless of processor
+        admin_only_routes = [
+            "admin/"  # Admin user updates
+        ]
+        
         route_definitions = []
         
-        # Convert each KnowlioApiRoute to RouteDefinition
+        # Convert each KnowlioApiRoute to RouteDefinition with appropriate auth settings
         for route in knowlio_routes:
+            auth_required = auth_mapping.get(route.processor_name, (False, None))[0]
+            allowed_groups = auth_mapping.get(route.processor_name, (False, None))[1]
+            
+            # Override for public routes
+            if any(pr in route.path for pr in public_routes):
+                auth_required = False
+                allowed_groups = None
+            
+            # Override for admin-only routes
+            if any(ar in route.path for ar in admin_only_routes):
+                auth_required = True
+                allowed_groups = ["Admin"]
+            
             route_def = RouteDefinition(
                 method=route.method,
                 path=route.path,
                 description=route.description,
-                auth_required=route.auth_required,
-                allowed_groups=route.allowed_groups
+                auth_required=auth_required,
+                allowed_groups=allowed_groups
             )
             route_definitions.append(route_def)
         

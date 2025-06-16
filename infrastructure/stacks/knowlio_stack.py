@@ -1,4 +1,4 @@
-from aws_cdk import Stack, aws_iam as iam, CfnOutput, aws_cognito as cognito, Fn, RemovalPolicy
+from aws_cdk import Stack, aws_iam as iam, CfnOutput
 from constructs import Construct
 
 from infrastructure.app_constructs.iam_role_construct import IamRole
@@ -82,18 +82,31 @@ class KnowlioStack(Stack):
             })
         """
 
-        # Create Lambda using LambdaConstruct with OpenSearch environment variables
+        # Create environment variables for Lambda
+        lambda_env = {
+            "OPENSEARCH_INDEX_NAME": "content-index",  # Main index for content searching
+            "OPENSEARCH_REGION": self.region,
+            "OPENSEARCH_SERVERLESS": "true"  # Flag to indicate we're using serverless
+        }
+        
+        # Add Cognito environment variables if auth stack is provided
+        if auth_stack:
+            lambda_env.update({
+                "USER_POOL_ID": auth_stack.user_pool.user_pool_id,
+                "USER_POOL_CLIENT_ID": auth_stack.user_pool_client.user_pool_client_id,
+                "COGNITO_DOMAIN": auth_stack.cognito_domain.domain_name,
+                "COGNITO_REGION": self.region,
+                "COGNITO_AUTH_ENABLED": "true"
+            })
+        
+        # Create Lambda using LambdaConstruct
         lambda_props = LambdaFunctionConstructProps(
             id="SyncHandler",
             handler="handlers.api_gateway_handler.lambda_handler",
             code_path="src",
             timeout_seconds=900,  # 15 minutes
             lambda_role=lambda_role,
-            environment={
-                "OPENSEARCH_INDEX_NAME": "content-index",  # Main index for content searching
-                "OPENSEARCH_REGION": self.region,
-                "OPENSEARCH_SERVERLESS": "true"  # Flag to indicate we're using serverless
-            }
+            environment=lambda_env
         )
 
         lambda_fn = LambdaConstruct(self, "SyncHandlerConstruct", lambda_props)
@@ -103,12 +116,11 @@ class KnowlioStack(Stack):
         api_routes = KnowlioApiConfig.get_route_definitions()
         
         # Create API Gateway with generic construct, passing user pool for authentication
-        # Updated to use new parameter order for direct service integrations
         api_gateway = ApiGatewayConstruct(
             self, "KnowlioApiGateway",
             props=api_props,
             routes=api_routes,
-            user_pool=auth_stack.user_pool,  # Pass user pool for authentication
+            user_pool=auth_stack.user_pool if auth_stack else None,  # Pass user pool for authentication
             lambda_function=lambda_fn.lambda_function  # Still pass lambda for backward compatibility
         )
         

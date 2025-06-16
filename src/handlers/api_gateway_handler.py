@@ -1,15 +1,30 @@
 """
 API Gateway Lambda handler for Knowlio REST API.
-Transforms API Gateway events into processor events and handles HTTP responses.
+Follows AWS best practices for layered architecture with Cognito authentication:
+
+1. API Gateway - Token Validation Layer:
+   - Cognito authorizer validates JWT token authenticity and expiration
+   - Valid tokens include claims with user ID, email, and groups
+
+2. Lambda - Authorization Layer:
+   - Extracts user details and groups from validated claims
+   - Enforces group-based access control based on route configuration
+   - Returns appropriate HTTP status codes (403 for permission issues)
+
+3. Lambda - Business Logic Layer:
+   - Processor functions receive pre-authorized requests
+   - Focus on business logic with authorization already handled
+   - Operate with security context from authorization layer
 """
 
 import json
 import traceback
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from exceptions.processor_exceptions.exceptions import ProcessorNotFoundError, InvalidInputError, \
     ProcessorExecutionError
 from helpers.common_helper.logger_helper import LoggerHelper
+from helpers.common_helper.cognito_helper import get_user_details_from_event, validate_user_access
 from config.api_routes import KnowlioApiRoutes, ApiRoute
 from sync_processor_registry.bootstrap import load_all_processors
 from sync_processor_registry.processor_registry import ProcessorRegistry
@@ -58,7 +73,7 @@ def _is_api_gateway_event(event: Dict[str, Any]) -> bool:
 
 
 def _handle_api_gateway_event(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    """Handle API Gateway proxy integration event"""
+    """Handle API Gateway proxy integration event with authorization interceptor"""
     
     # Extract HTTP method and path
     http_method = event.get("httpMethod", "").upper()
@@ -71,8 +86,39 @@ def _handle_api_gateway_event(event: Dict[str, Any], context: Any) -> Dict[str, 
     if not route:
         return _http_response(404, {"error": "Route not found", "message": f"No route found for {http_method} /{path}"})
     
+    # *** AUTHORIZATION INTERCEPTOR ***
+    # Check if route requires authentication
+    if getattr(route, 'auth_required', False):
+        # Extract user details
+        user_details = get_user_details_from_event(event)
+        
+        # Validate access based on required groups
+        is_authorized, message = validate_user_access(
+            user_details,
+            getattr(route, 'allowed_groups', None)
+        )
+        
+        # Create error response if not authorized
+        if not is_authorized:
+            auth_response = _http_response(403, {"error": "Forbidden", "message": message})
+        else:
+            auth_response = None
+        
+        # If not authorized, return the error response
+        if not is_authorized:
+            logger.warning(f"Access denied for route: {http_method} {path}")
+            return auth_response
+        
+        # Add user details to event for processors to access
+        event['userData'] = user_details
+        logger.info(f"User {user_details.get('email')} authorized for {path}")
+    
     # Extract and build payload
     payload = _build_payload_from_api_gateway_event(event, route)
+    
+    # If we have user details from authorization, add them to the payload
+    if 'userData' in event:
+        payload['userData'] = event['userData']
     
     # Execute processor
     processor = _resolve_processor(route.processor_name)
