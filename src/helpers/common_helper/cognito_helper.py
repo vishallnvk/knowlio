@@ -66,7 +66,7 @@ def get_user_details_from_event(event: Dict) -> Dict:
             groups = claims.get('cognito:groups', '')
             if isinstance(groups, str):
                 if groups:  # Non-empty string - single group
-                    user_details['groups'] = [groups]
+                    user_details['groups'] = [item.strip() for item in groups.split(',')]
             else:  # Already a list
                 user_details['groups'] = groups
                 
