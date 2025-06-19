@@ -123,7 +123,36 @@ class UserHelper:
                 role = updates.get("role", user.get("role"))
                 self._validate_role_specific_metadata(role, updates["metadata"])
         
+        # Add consent dates if consent flags are being updated
+        updates = self._add_consent_dates_if_needed(updates)
+        
         return self.db.update_item("user_id", user_id, updates)
+    
+    def _add_consent_dates_if_needed(self, updates: Dict) -> Dict:
+        """
+        Add consent dates to updates dict if consent flags are being updated to true.
+        
+        Args:
+            updates: Dict of fields to update
+            
+        Returns:
+            Updates dict with added consent dates where appropriate
+        """
+        current_timestamp = datetime.utcnow().isoformat()
+        
+        # Handle AI training consent
+        if updates.get("ai_training_consent") is True:
+            updates["ai_training_consent_date"] = current_timestamp
+            
+        # Handle AI reference consent
+        if updates.get("ai_reference_consent") is True:
+            updates["ai_reference_consent_date"] = current_timestamp
+            
+        # Handle AI marketplace consent
+        if updates.get("ai_marketplace_consent") is True:
+            updates["ai_marketplace_consent_date"] = current_timestamp
+            
+        return updates
 
     @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
     def search_users(self, search_params: Dict, limit: int = None, pagination_token: str = None) -> Dict:
