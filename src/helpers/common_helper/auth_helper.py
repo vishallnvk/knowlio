@@ -7,6 +7,7 @@ import functools
 from typing import Dict, List, Callable, Any, Optional, Union, Set
 
 from helpers.common_helper.logger_helper import LoggerHelper
+from helpers.common_helper.auth_context import AuthContext, AuthContextService
 
 logger = LoggerHelper(__name__).get_logger()
 
@@ -89,18 +90,18 @@ class RoleBasedAuth:
     def require_role(required_roles: Union[str, List[str]]):
         """
         Decorator to enforce role-based access control on functions.
-        Can be used with any function that has a 'user' or 'user_role' parameter.
+        Works with the new AuthContext POJO.
         
         Args:
             required_roles: Single role or list of roles that are allowed to access
             
         Returns:
             Decorated function that checks role before execution
-            
+        
         Example:
         ```
         @RoleBasedAuth.require_role("ADMIN")
-        def admin_operation(user, other_params):
+        def admin_operation(payload):
             # Only users with ADMIN role will reach this code
             pass
         ```
@@ -112,34 +113,39 @@ class RoleBasedAuth:
         def decorator(func: Callable) -> Callable:
             @functools.wraps(func)
             def wrapper(*args, **kwargs):
-                # Try to extract user role from arguments
-                user_role = None
+                # Get auth context from payload
+                auth_context = None
                 
-                # Check kwargs for user object or role
-                if 'user' in kwargs and isinstance(kwargs['user'], dict):
-                    user_role = kwargs['user'].get('role')
-                elif 'user_role' in kwargs:
-                    user_role = kwargs['user_role']
-                    
-                # If not found in kwargs, try to find in args (assuming first Dict arg might be user)
-                if user_role is None:
+                # Check kwargs for auth_context or payload with auth_context
+                if 'auth_context' in kwargs:
+                    auth_context = kwargs['auth_context']
+                elif 'payload' in kwargs and isinstance(kwargs['payload'], dict):
+                    auth_context = AuthContext.from_payload(kwargs['payload'])
+                
+                # If not found in kwargs, try to find in args
+                if auth_context is None:
                     for arg in args:
-                        if isinstance(arg, dict) and 'role' in arg:
-                            user_role = arg['role']
+                        if isinstance(arg, AuthContext):
+                            auth_context = arg
                             break
+                        elif isinstance(arg, dict):
+                            extracted = AuthContext.from_payload(arg)
+                            if extracted:
+                                auth_context = extracted
+                                break
                 
-                # If we couldn't find a role, we can't authorize
-                if user_role is None:
+                # If we couldn't find a context or role, we can't authorize
+                if auth_context is None or auth_context.role is None:
                     logger.error("Authorization failed: No user role found in arguments")
                     raise AuthorizationError("No user role provided for authorization")
                 
                 # Check if the user's role is in the list of required roles
                 for role in required_roles:
-                    if RoleBasedAuth.has_permission(user_role, role):
+                    if auth_context.has_permission(role):
                         return func(*args, **kwargs)
                         
-                logger.warning(f"Authorization failed: User with role {user_role} attempted to access function requiring roles {required_roles}")
-                raise AuthorizationError(f"User with role {user_role} does not have required permissions")
+                logger.warning(f"Authorization failed: User with role {auth_context.role} attempted to access function requiring roles {required_roles}")
+                raise AuthorizationError(f"User with role {auth_context.role} does not have required permissions")
                 
             return wrapper
         return decorator
@@ -147,3 +153,10 @@ class RoleBasedAuth:
 # Convenience aliases
 require_role = RoleBasedAuth.require_role
 validate_role = RoleBasedAuth.validate_role
+
+# Expose helper functions from AuthContextService for convenience
+get_authenticated_user = AuthContextService.get_authenticated_user
+get_authenticated_user_id = AuthContextService.get_authenticated_user_id
+get_authenticated_user_role = AuthContextService.get_authenticated_user_role
+ensure_authenticated = AuthContextService.ensure_authenticated
+ensure_role = AuthContextService.ensure_role

@@ -3,6 +3,8 @@ from typing import Dict, Any, List
 from helpers.common_helper.common_helper import require_keys
 from helpers.common_helper.logger_helper import LoggerHelper
 from helpers.common_helper.auth_helper import RoleBasedAuth, require_role, AuthorizationError
+from helpers.common_helper.auth_helper import get_authenticated_user_id, get_authenticated_user_role
+from helpers.common_helper.auth_context import AuthContext
 from helpers.app_logic_helpers.user_helper import UserHelper, UserValidationError
 from sync_processor_registry.processor_registry import ProcessorRegistry
 from sync_processors.base_processor import BaseProcessor
@@ -38,6 +40,12 @@ class UserProcessor(BaseProcessor):
         """
         try:
             require_keys(payload, ["email", "role"])
+            
+            # Add authenticated user ID as creator if available
+            creator_id = get_authenticated_user_id(payload)
+            if creator_id:
+                payload["created_by"] = creator_id
+            
             return self.helper.register_user(payload)
         except UserValidationError as e:
             logger.warning(f"User registration validation error: {str(e)}")
@@ -79,12 +87,22 @@ class UserProcessor(BaseProcessor):
         try:
             require_keys(payload, ["user_id", "updates"])
             
+            # Get authenticated user from context
+            auth_context = AuthContext.from_payload(payload)
+            
             # Ensure we're not trying to update immutable fields
             updates = payload["updates"]
             immutable_fields = ["user_id", "created_at"]
             for field in immutable_fields:
                 if field in updates:
                     return {"error": f"Cannot update immutable field: {field}"}
+            
+            # Add modification audit info
+            if auth_context.is_authenticated():
+                if "metadata" not in updates:
+                    updates["metadata"] = {}
+                    
+                updates["metadata"]["last_modified_by"] = auth_context.user_id
             
             updated_user = self.helper.update_user_profile(payload["user_id"], updates)
             return updated_user
@@ -146,6 +164,10 @@ class UserProcessor(BaseProcessor):
             user_id = payload["user_id"]
             field = payload["field"]
             value = payload["value"]
+            
+            # Log who made the admin change
+            admin_user_id = get_authenticated_user_id(payload)
+            logger.info(f"Admin user {admin_user_id} updating user {user_id}, field {field}")
             
             updated_user = self.helper.admin_update_user(user_id, field, value)
             return updated_user
