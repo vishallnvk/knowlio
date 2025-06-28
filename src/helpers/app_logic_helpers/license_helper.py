@@ -204,12 +204,13 @@ class LicenseHelper:
             return item_value == search_value
 
     @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
-    def revoke_license(self, license_id: str) -> Dict:
+    def revoke_license(self, license_id: str, revocation_data: Dict = None) -> Dict:
         """
         Revoke a license.
         
         Args:
             license_id: ID of the license to revoke
+            revocation_data: Optional additional data to include in the revocation (e.g., who revoked it)
             
         Returns:
             Updated license item
@@ -219,6 +220,11 @@ class LicenseHelper:
             "status": "REVOKED",
             "revoked_at": datetime.utcnow().isoformat()
         }
+        
+        # Add any additional revocation data
+        if revocation_data:
+            updates.update(revocation_data)
+            
         return self.db.update_item("license_id", license_id, updates)
         
     def _decode_pagination_token(self, pagination_token: Optional[str]) -> Optional[Dict]:

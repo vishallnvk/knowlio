@@ -4,6 +4,8 @@ import botocore.exceptions
 
 from helpers.common_helper.common_helper import require_keys, Retry
 from helpers.common_helper.logger_helper import LoggerHelper
+from helpers.common_helper.auth_helper import require_role, get_authenticated_user_id
+from helpers.common_helper.auth_context import AuthContext
 from helpers.app_logic_helpers.content_helper import ContentHelper, ContentValidationError
 from sync_processor_registry.processor_registry import ProcessorRegistry
 from sync_processors.base_processor import BaseProcessor
@@ -111,6 +113,17 @@ class ContentProcessor(BaseProcessor):
         """
         try:
             require_keys(payload, ["publisher_id", "title", "type"])
+            
+            # Add authenticated user info for audit trail
+            auth_context = AuthContext.from_payload(payload)
+            if auth_context.is_authenticated():
+                # Add creator information to metadata
+                if "metadata" not in payload:
+                    payload["metadata"] = {}
+                
+                payload["metadata"]["created_by"] = auth_context.user_id
+                logger.info(f"User {auth_context.user_id} ({auth_context.role}) creating content with title: {payload['title']}")
+            
             return self.helper.upload_content_metadata(payload)
         except ContentValidationError as e:
             logger.warning(f"Content validation error: {str(e)}")
@@ -183,6 +196,19 @@ class ContentProcessor(BaseProcessor):
                     if isinstance(status, str) and WorkflowStatus.is_valid(status):
                         # Keep as string but validate against enum values
                         pass
+            
+            # Add authenticated user info for audit trail
+            user_id = get_authenticated_user_id(payload)
+            if user_id:
+                # Add modification information to metadata
+                updates = payload["updates"]
+                if "metadata" not in updates:
+                    updates["metadata"] = {}
+                
+                updates["metadata"]["last_modified_by"] = user_id
+                updates["metadata"]["last_modified_at"] = Retry.get_iso_timestamp()
+                
+                logger.info(f"User {user_id} updating content {payload['content_id']}")
                         
             return self.helper.update_content_metadata(payload["content_id"], payload["updates"])
         except ContentValidationError as e:
@@ -240,15 +266,33 @@ class ContentProcessor(BaseProcessor):
             logger.error(f"Error updating content attribute: {str(e)}")
             return {"error": f"Failed to update content attribute: {str(e)}"}
 
+    @require_role(["ADMIN", "PUBLISHER"])
     def _archive_content(self, payload: Dict) -> Dict:
         """
         Archive content by setting its status to ARCHIVED.
+        Requires ADMIN or PUBLISHER role.
         
         Required payload keys:
         - content_id: ID of the content to archive
         """
         try:
             require_keys(payload, ["content_id"])
+            
+            # Get authenticated user from context
+            auth_context = AuthContext.from_payload(payload)
+            logger.info(f"User {auth_context.user_id} ({auth_context.role}) archiving content {payload['content_id']}")
+            
+            # First update with archival audit information
+            updates = {
+                "metadata": {
+                    "archived_by": auth_context.user_id,
+                    "archived_at": Retry.get_iso_timestamp()
+                }
+            }
+            
+            self.helper.update_content_metadata(payload["content_id"], updates)
+            
+            # Then perform the actual archival
             return self.helper.archive_content(payload["content_id"])
         except ContentValidationError as e:
             logger.warning(f"Content validation error: {str(e)}")
