@@ -12,6 +12,11 @@ from helpers.common_helper.auth_context import AuthContext
 from helpers.aws_service_helpers.s3_helper import S3Helper
 from sync_processor_registry.processor_registry import ProcessorRegistry
 from sync_processors.base_processor import BaseProcessor
+from config.s3_config import (
+    CONTENT_BUCKET_NAME,
+    DEFAULT_CONTENT_TYPE,
+    DEFAULT_PRESIGNED_URL_EXPIRY
+)
 
 logger = LoggerHelper(__name__).get_logger()
 
@@ -19,8 +24,8 @@ logger = LoggerHelper(__name__).get_logger()
 @ProcessorRegistry.register("s3_upload")
 class S3UploadProcessor(BaseProcessor):
     def __init__(self):
-        # Initialize with required bucket if needed
-        self.s3_helper = S3Helper("knowlio-content-bucket")  # You may want to make this configurable
+        # Initialize with required bucket from config
+        self.s3_helper = S3Helper(CONTENT_BUCKET_NAME)
         
         super().__init__({
             # Regular upload methods
@@ -51,8 +56,8 @@ class S3UploadProcessor(BaseProcessor):
         try:
             require_keys(payload, ["key"])
             key = payload["key"]
-            content_type = payload.get("content_type", "application/octet-stream")
-            expires_in = int(payload.get("expires_in", 3600))
+            content_type = payload.get("content_type", DEFAULT_CONTENT_TYPE)
+            expires_in = int(payload.get("expires_in", DEFAULT_PRESIGNED_URL_EXPIRY))
             
             # Add user tracking metadata to the key
             auth_context = AuthContext.from_payload(payload)
@@ -88,7 +93,7 @@ class S3UploadProcessor(BaseProcessor):
         try:
             require_keys(payload, ["key"])
             key = payload["key"]
-            expires_in = int(payload.get("expires_in", 3600))
+            expires_in = int(payload.get("expires_in", DEFAULT_PRESIGNED_URL_EXPIRY))
             
             # Log download requests
             auth_context = AuthContext.from_payload(payload)
@@ -121,7 +126,7 @@ class S3UploadProcessor(BaseProcessor):
         try:
             require_keys(payload, ["key"])
             key = payload["key"]
-            content_type = payload.get("content_type", "application/octet-stream")
+            content_type = payload.get("content_type", DEFAULT_CONTENT_TYPE)
             
             # Add user tracking information
             auth_context = AuthContext.from_payload(payload)
@@ -166,7 +171,7 @@ class S3UploadProcessor(BaseProcessor):
             key = payload["key"]
             upload_id = payload["upload_id"]
             part_number = int(payload["part_number"])
-            expires_in = int(payload.get("expires_in", 3600))
+            expires_in = int(payload.get("expires_in", DEFAULT_PRESIGNED_URL_EXPIRY))
             
             # Log the request
             user_id = get_authenticated_user_id(payload)

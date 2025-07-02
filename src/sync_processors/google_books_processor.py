@@ -13,6 +13,7 @@ from helpers.app_logic_helpers.google_books_helper import GoogleBooksHelper
 from sync_processor_registry.processor_registry import ProcessorRegistry
 from sync_processors.base_processor import BaseProcessor
 from enums.book_fields import BookField, BookDefaultFields
+from config.google_books_api_config import DEFAULT_MAX_RESULTS
 
 logger = LoggerHelper(__name__).get_logger()
 
@@ -101,7 +102,7 @@ class GoogleBooksProcessor(BaseProcessor):
         try:
             require_keys(payload, ["author_name"])
             author_name = payload["author_name"]
-            max_results = payload.get("max_results", 100)
+            max_results = payload.get("max_results", DEFAULT_MAX_RESULTS)
             
             # Log who is making the request
             auth_context = AuthContext.from_payload(payload)
@@ -138,7 +139,7 @@ class GoogleBooksProcessor(BaseProcessor):
             require_keys(payload, ["author_name"])
             author_name = payload["author_name"]
             fields = payload.get("fields", BookDefaultFields.DEFAULT_FIELDS)
-            max_results = payload.get("max_results", 100)
+            max_results = payload.get("max_results", DEFAULT_MAX_RESULTS)
             
             # Log who is making the request
             user_id = get_authenticated_user_id(payload)

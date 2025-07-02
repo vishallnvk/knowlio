@@ -1,48 +1,42 @@
-"""
-Enum definitions for content status values.
-Provides standardized, type-safe constants for content lifecycle and workflow statuses.
-"""
-
-from enum import Enum, auto
+from enum import Enum
 
 
 class ContentStatus(Enum):
     """
-    Enum representing the lifecycle status of content items.
-    Used to track content through its lifecycle from creation to archival.
+    Enum for content status values.
     """
-    DRAFT = "DRAFT"      # Initial draft state, not fully published
-    ACTIVE = "ACTIVE"    # Published and available content
-    ARCHIVED = "ARCHIVED"  # No longer actively available, but preserved
-
+    DRAFT = "DRAFT"
+    ACTIVE = "ACTIVE"
+    ARCHIVED = "ARCHIVED"
+    
     @classmethod
-    def get_valid_statuses(cls) -> list:
-        """Get a list of all valid status values as strings"""
+    def get_valid_statuses(cls):
+        """Get all valid status values"""
         return [status.value for status in cls]
-
+    
     @classmethod
     def is_valid(cls, status: str) -> bool:
-        """Check if a string value is a valid content status"""
+        """Check if a status value is valid"""
         return status in cls.get_valid_statuses()
 
 
 class WorkflowStatus(Enum):
     """
-    Enum representing workflow processing status for content items.
-    Used for various processing pipelines like RAG, training, licensing.
+    Enum for workflow status values.
+    Changed to use ENABLED/DISABLED as per requirements.
     """
-    ENABLED = "ENABLED"   # Processing is enabled for this content
-    DISABLED = "DISABLED"  # Processing is disabled for this content
-
-    # Common workflow status field names used throughout the application
-    WORKFLOW_STATUS_FIELDS = ("rag_status", "training_status", "licensing_status")
-
+    ENABLED = "ENABLED"
+    DISABLED = "DISABLED"
+    
+    # Define which fields use workflow status
+    WORKFLOW_STATUS_FIELDS = ["rag_status", "training_status", "licensing_status"]
+    
     @classmethod
-    def get_valid_statuses(cls) -> list:
-        """Get a list of all valid workflow status values as strings"""
+    def get_valid_statuses(cls):
+        """Get all valid workflow status values"""
         return [status.value for status in cls]
-
+    
     @classmethod
     def is_valid(cls, status: str) -> bool:
-        """Check if a string value is a valid workflow status"""
+        """Check if a workflow status value is valid"""
         return status in cls.get_valid_statuses()

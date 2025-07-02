@@ -5,6 +5,7 @@ from helpers.common_helper.logger_helper import LoggerHelper
 from helpers.common_helper.auth_helper import require_role, get_authenticated_user_id
 from helpers.common_helper.auth_context import AuthContext
 from helpers.common_helper.common_helper import Retry
+from helpers.common_helper.response_formatter import ResponseFormatter
 from sync_processor_registry.processor_registry import ProcessorRegistry
 from sync_processors.base_processor import BaseProcessor
 
@@ -41,10 +42,23 @@ class AnalyticsProcessor(BaseProcessor):
                     payload["consumer_id"] = auth_context.user_id
                     logger.info(f"Using authenticated user {auth_context.user_id} as consumer_id for analytics")
             
-            return self.helper.log_content_access(payload)
+            result = self.helper.log_content_access(payload)
+            
+            # Handle error response from helper
+            if "error" in result:
+                message, code = ResponseFormatter.extract_error_info(result)
+                return ResponseFormatter.format_error(message, code)
+            
+            # Format successful create response
+            return ResponseFormatter.format_create_response(
+                resource_type="usage_log",
+                resource_id=result.get("log_id"),
+                resource_data=result
+            )
         except Exception as e:
             logger.error(f"Error logging content access: {str(e)}")
-            return {"error": f"Failed to log content access: {str(e)}"}
+            return ResponseFormatter.format_error(f"Failed to log content access: {str(e)}", 
+                                               ResponseFormatter.ERROR_CODES["INTERNAL_ERROR"])
 
     @require_role(["ADMIN", "PUBLISHER"])
     def _get_usage_report_by_content(self, payload: Dict) -> Dict:
@@ -56,16 +70,29 @@ class AnalyticsProcessor(BaseProcessor):
         try:
             content_id = payload.get("content_id")
             if not content_id:
-                return {"error": "content_id is required for usage report"}
+                return ResponseFormatter.format_error(
+                    "content_id is required for usage report",
+                    ResponseFormatter.ERROR_CODES["VALIDATION_ERROR"],
+                    field="content_id"
+                )
             
             # Log who accessed the report
             user_id = get_authenticated_user_id(payload)
             logger.info(f"User {user_id} accessing content usage report for {content_id}")
             
-            return self.helper.get_usage_report_by_content(content_id)
+            result = self.helper.get_usage_report_by_content(content_id)
+            
+            # Handle error response from helper
+            if "error" in result:
+                message, code = ResponseFormatter.extract_error_info(result)
+                return ResponseFormatter.format_error(message, code)
+            
+            # Format successful response with report data
+            return ResponseFormatter.format_success(result)
         except Exception as e:
             logger.error(f"Error getting usage report by content: {str(e)}")
-            return {"error": f"Failed to get usage report: {str(e)}"}
+            return ResponseFormatter.format_error(f"Failed to get usage report: {str(e)}", 
+                                               ResponseFormatter.ERROR_CODES["INTERNAL_ERROR"])
 
     def _get_usage_report_by_consumer(self, payload: Dict) -> Dict:
         """Get usage report for a specific consumer"""
@@ -73,7 +100,11 @@ class AnalyticsProcessor(BaseProcessor):
         try:
             consumer_id = payload.get("consumer_id")
             if not consumer_id:
-                return {"error": "consumer_id is required for usage report"}
+                return ResponseFormatter.format_error(
+                    "consumer_id is required for usage report",
+                    ResponseFormatter.ERROR_CODES["VALIDATION_ERROR"],
+                    field="consumer_id"
+                )
             
             # Get authenticated user context
             auth_context = AuthContext.from_payload(payload)
@@ -82,14 +113,26 @@ class AnalyticsProcessor(BaseProcessor):
             if auth_context.is_authenticated():
                 if auth_context.role == "CONSUMER" and consumer_id != auth_context.user_id:
                     logger.warning(f"User {auth_context.user_id} attempted to access usage report for another consumer: {consumer_id}")
-                    return {"error": "You do not have permission to access this consumer's usage report"}
+                    return ResponseFormatter.format_error(
+                        "You do not have permission to access this consumer's usage report",
+                        ResponseFormatter.ERROR_CODES["FORBIDDEN"]
+                    )
                 
                 logger.info(f"User {auth_context.user_id} ({auth_context.role}) accessing consumer usage report for {consumer_id}")
             
-            return self.helper.get_usage_report_by_consumer(consumer_id)
+            result = self.helper.get_usage_report_by_consumer(consumer_id)
+            
+            # Handle error response from helper
+            if "error" in result:
+                message, code = ResponseFormatter.extract_error_info(result)
+                return ResponseFormatter.format_error(message, code)
+            
+            # Format successful response with report data
+            return ResponseFormatter.format_success(result)
         except Exception as e:
             logger.error(f"Error getting usage report by consumer: {str(e)}")
-            return {"error": f"Failed to get usage report: {str(e)}"}
+            return ResponseFormatter.format_error(f"Failed to get usage report: {str(e)}", 
+                                               ResponseFormatter.ERROR_CODES["INTERNAL_ERROR"])
 
     @require_role("ADMIN")
     def _export_usage_logs(self, payload: Dict) -> Dict:
@@ -109,7 +152,16 @@ class AnalyticsProcessor(BaseProcessor):
                 payload["metadata"]["exported_at"] = Retry.get_iso_timestamp()
                 logger.info(f"User {user_id} exporting usage logs")
             
-            return self.helper.export_usage_logs(payload)
+            result = self.helper.export_usage_logs(payload)
+            
+            # Handle error response from helper
+            if "error" in result:
+                message, code = ResponseFormatter.extract_error_info(result)
+                return ResponseFormatter.format_error(message, code)
+            
+            # Format successful response
+            return ResponseFormatter.format_success(result)
         except Exception as e:
             logger.error(f"Error exporting usage logs: {str(e)}")
-            return {"error": f"Failed to export usage logs: {str(e)}"}
+            return ResponseFormatter.format_error(f"Failed to export usage logs: {str(e)}", 
+                                               ResponseFormatter.ERROR_CODES["INTERNAL_ERROR"])

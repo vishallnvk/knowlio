@@ -1,6 +1,7 @@
 import uuid
 import re
 from typing import Optional, Dict, List, Any, Union
+from datetime import datetime
 
 from helpers.aws_service_helpers.dynamodb_helper import DynamoDBHelper
 from helpers.common_helper.logger_helper import LoggerHelper
@@ -8,11 +9,18 @@ from helpers.common_helper.common_helper import Retry
 from helpers.common_helper.auth_helper import RoleBasedAuth, AuthorizationError
 from helpers.common_helper.pagination_helper import PaginationHelper
 from models.user_model import UserModel
+from config.user_config import (
+    USERS_TABLE_NAME, 
+    DEFAULT_RETRY_MAX_ATTEMPTS, 
+    DEFAULT_RETRY_INITIAL_WAIT,
+    EMAIL_REGEX_PATTERN,
+    IMMUTABLE_FIELDS,
+    INDEXED_FIELDS,
+    REQUIRED_FIELDS
+)
 import botocore.exceptions
 
 logger = LoggerHelper(__name__).get_logger()
-
-USERS_TABLE = "users"
 
 class UserValidationError(Exception):
     """Exception raised for user data validation failures."""
@@ -20,9 +28,9 @@ class UserValidationError(Exception):
 
 class UserHelper:
     def __init__(self):
-        self.db = DynamoDBHelper(table_name=USERS_TABLE)
+        self.db = DynamoDBHelper(table_name=USERS_TABLE_NAME)
 
-    @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
+    @Retry(max_attempts=DEFAULT_RETRY_MAX_ATTEMPTS, initial_wait=DEFAULT_RETRY_INITIAL_WAIT, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
     def register_user(self, user_data: Dict) -> Dict:
         """
         Register a new user with validation.
@@ -37,8 +45,7 @@ class UserHelper:
             UserValidationError: If validation fails
         """
         # Validate required fields
-        required_fields = ["email", "role"]
-        for field in required_fields:
+        for field in REQUIRED_FIELDS:
             if field not in user_data:
                 raise UserValidationError(f"Missing required field: {field}")
         
@@ -67,7 +74,7 @@ class UserHelper:
         self.db.put_item(user_item)
         return {"message": "User registered successfully", "user_id": user_id}
 
-    @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
+    @Retry(max_attempts=DEFAULT_RETRY_MAX_ATTEMPTS, initial_wait=DEFAULT_RETRY_INITIAL_WAIT, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
     def get_user_profile(self, user_id: str) -> Optional[Dict]:
         """
         Get user profile by ID.
@@ -81,7 +88,7 @@ class UserHelper:
         logger.info("Fetching user profile for user_id: %s", user_id)
         return self.db.get_item({"user_id": user_id})
 
-    @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
+    @Retry(max_attempts=DEFAULT_RETRY_MAX_ATTEMPTS, initial_wait=DEFAULT_RETRY_INITIAL_WAIT, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
     def update_user_profile(self, user_id: str, updates: Dict) -> Dict:
         """
         Update user profile with validation.
@@ -154,7 +161,7 @@ class UserHelper:
             
         return updates
 
-    @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
+    @Retry(max_attempts=DEFAULT_RETRY_MAX_ATTEMPTS, initial_wait=DEFAULT_RETRY_INITIAL_WAIT, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
     def search_users(self, search_params: Dict, limit: int = None, pagination_token: str = None) -> Dict:
         """
         Generic search users method that can handle various criteria.
@@ -174,8 +181,7 @@ class UserHelper:
         last_evaluated_key = self._decode_pagination_token(pagination_token)
         
         # See if we can use an indexed field for more efficient querying
-        indexed_fields = ["role", "email"]  # Fields that might have indexes
-        for field in indexed_fields:
+        for field in INDEXED_FIELDS:
             if field in search_params:
                 try:
                     # Attempt to use the index
@@ -215,7 +221,7 @@ class UserHelper:
         # Apply standard pagination encoding
         return PaginationHelper.encode_pagination_result(result)
         
-    @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
+    @Retry(max_attempts=DEFAULT_RETRY_MAX_ATTEMPTS, initial_wait=DEFAULT_RETRY_INITIAL_WAIT, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
     def admin_update_user(self, user_id: str, field: str, value: Any) -> Dict:
         """
         Generic admin method to update any user field.
@@ -231,7 +237,7 @@ class UserHelper:
         Raises:
             UserValidationError: If field or value is invalid
         """
-        if field in ["user_id", "created_at"]:
+        if field in IMMUTABLE_FIELDS:
             raise UserValidationError(f"Cannot update immutable field: {field}")
             
         # Special validation for certain fields
@@ -248,8 +254,7 @@ class UserHelper:
     # Helper methods
     def _is_valid_email(self, email: str) -> bool:
         """Validate email format"""
-        pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
-        return bool(re.match(pattern, email))
+        return bool(re.match(EMAIL_REGEX_PATTERN, email))
         
     def _validate_role_specific_metadata(self, role: str, metadata: Dict) -> None:
         """

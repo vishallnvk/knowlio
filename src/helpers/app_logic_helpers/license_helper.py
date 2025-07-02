@@ -8,16 +8,20 @@ from helpers.common_helper.logger_helper import LoggerHelper
 from helpers.common_helper.common_helper import Retry
 from helpers.common_helper.pagination_helper import PaginationHelper
 from models.license_model import LicenseModel
+from config.license_config import (
+    LICENSES_TABLE_NAME,
+    DEFAULT_RETRY_MAX_ATTEMPTS,
+    DEFAULT_RETRY_INITIAL_WAIT,
+    INDEXED_FIELDS
+)
 
 logger = LoggerHelper(__name__).get_logger()
 
-LICENSES_TABLE = "licenses"
-
 class LicenseHelper:
     def __init__(self):
-        self.db = DynamoDBHelper(table_name=LICENSES_TABLE)
+        self.db = DynamoDBHelper(table_name=LICENSES_TABLE_NAME)
 
-    @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
+    @Retry(max_attempts=DEFAULT_RETRY_MAX_ATTEMPTS, initial_wait=DEFAULT_RETRY_INITIAL_WAIT, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
     def create_license(self, license_data: Dict) -> Dict:
         """
         Create a new license.
@@ -34,7 +38,7 @@ class LicenseHelper:
         self.db.put_item(license_item)
         return {"message": "License created successfully", "license_id": license_item["license_id"]}
 
-    @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
+    @Retry(max_attempts=DEFAULT_RETRY_MAX_ATTEMPTS, initial_wait=DEFAULT_RETRY_INITIAL_WAIT, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
     def get_license(self, license_id: str) -> Optional[Dict]:
         """
         Get license details by ID.
@@ -48,7 +52,7 @@ class LicenseHelper:
         logger.info("Fetching license for license_id: %s", license_id)
         return self.db.get_item({"license_id": license_id})
 
-    @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
+    @Retry(max_attempts=DEFAULT_RETRY_MAX_ATTEMPTS, initial_wait=DEFAULT_RETRY_INITIAL_WAIT, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
     def search_licenses(self, search_params: Dict, limit: int = None, pagination_token: str = None) -> Dict:
         """
         Search licenses based on provided parameters with pagination support.
@@ -107,9 +111,7 @@ class LicenseHelper:
             Query result with items and pagination info, including the limit
         """
         # Try to use GSIs for efficiency when possible
-        indexable_fields = ["consumer_id", "content_id", "publisher_id", "status"]
-        
-        for field in indexable_fields:
+        for field in INDEXED_FIELDS:
             if field in search_params:
                 try:
                     # Try to use the field's GSI
@@ -203,7 +205,7 @@ class LicenseHelper:
         else:
             return item_value == search_value
 
-    @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
+    @Retry(max_attempts=DEFAULT_RETRY_MAX_ATTEMPTS, initial_wait=DEFAULT_RETRY_INITIAL_WAIT, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
     def revoke_license(self, license_id: str, revocation_data: Dict = None) -> Dict:
         """
         Revoke a license.

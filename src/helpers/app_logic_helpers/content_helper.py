@@ -7,12 +7,10 @@ from helpers.aws_service_helpers.dynamodb_helper import DynamoDBHelper
 from helpers.common_helper.logger_helper import LoggerHelper
 from helpers.common_helper.common_helper import Retry
 from helpers.common_helper.pagination_helper import PaginationHelper
-from models.content_model import ContentModel
 from enums.content_status import ContentStatus, WorkflowStatus
+from config.content_config import CONTENT_TABLE_NAME, DEFAULT_RETRY_MAX_ATTEMPTS, DEFAULT_RETRY_INITIAL_WAIT, WORKFLOW_STATUS_FIELDS
 
 logger = LoggerHelper(__name__).get_logger()
-
-CONTENT_TABLE = "content"
 
 class ContentValidationError(Exception):
     """Exception raised for content data validation failures."""
@@ -20,36 +18,38 @@ class ContentValidationError(Exception):
 
 class ContentHelper:
     def __init__(self):
-        self.db = DynamoDBHelper(table_name=CONTENT_TABLE)
+        self.db = DynamoDBHelper(table_name=CONTENT_TABLE_NAME)
 
-    @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
+    @Retry(max_attempts=DEFAULT_RETRY_MAX_ATTEMPTS, initial_wait=DEFAULT_RETRY_INITIAL_WAIT, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
     def upload_content_metadata(self, content_data: Dict) -> Dict:
         """
-        Upload content metadata with validation.
+        Upload content metadata directly to DynamoDB.
+        
+        Note: Validation is now handled by the ContentFactory and type-specific models
+        in the ContentProcessor before calling this method.
         
         Args:
-            content_data: Content information including required fields
+            content_data: Pre-validated content information dictionary
             
         Returns:
             Dict with success message and content_id
-            
-        Raises:
-            ContentValidationError: If validation fails
         """
         try:
-            # Create content model (validates type and other fields)
-            content_model = ContentModel(content_data)
-            content_item = content_model.__dict__
-            content_id = content_item["content_id"]
-
-            logger.info("Uploading content metadata: %s", content_item)
-            self.db.put_item(content_item)
+            content_id = content_data.get("content_id")
+            
+            # Add timestamps if not present
+            if "created_at" not in content_data:
+                content_data["created_at"] = datetime.utcnow().isoformat()
+            
+            logger.info("Uploading content metadata: %s", content_data)
+            self.db.put_item(content_data)
+            
             return {"message": "Content metadata uploaded", "content_id": content_id}
-        except ValueError as e:
-            logger.error("Content validation error: %s", str(e))
-            raise ContentValidationError(str(e))
+        except Exception as e:
+            logger.error("Error uploading content metadata: %s", str(e))
+            raise ContentValidationError(f"Failed to upload content metadata: {str(e)}")
 
-    @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
+    @Retry(max_attempts=DEFAULT_RETRY_MAX_ATTEMPTS, initial_wait=DEFAULT_RETRY_INITIAL_WAIT, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
     def upload_content_blob(self, content_id: str, file_key: str) -> Dict:
         """
         Attach a file key to content and activate it.
@@ -72,7 +72,7 @@ class ContentHelper:
         
         return self.db.update_item("content_id", content_id, updates)
 
-    @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
+    @Retry(max_attempts=DEFAULT_RETRY_MAX_ATTEMPTS, initial_wait=DEFAULT_RETRY_INITIAL_WAIT, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
     def get_content_details(self, content_id: str) -> Optional[Dict]:
         """
         Get content details by ID.
@@ -86,7 +86,7 @@ class ContentHelper:
         logger.info("Fetching content details for content_id: %s", content_id)
         return self.db.get_item({"content_id": content_id})
 
-    @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
+    @Retry(max_attempts=DEFAULT_RETRY_MAX_ATTEMPTS, initial_wait=DEFAULT_RETRY_INITIAL_WAIT, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
     def update_content_metadata(self, content_id: str, updates: Dict) -> Dict:
         """
         Update content metadata with validation.
@@ -110,22 +110,15 @@ class ContentHelper:
         if not content:
             raise ContentValidationError(f"Content not found with ID: {content_id}")
         
-        # Validate type if changing
-        if "type" in updates:
-            try:
-                updates["type"] = ContentModel._validate_type(None, updates["type"])
-            except ValueError as e:
-                raise ContentValidationError(str(e))
-        
         # Validate status if changing
-        if "status" in updates and not ContentModel.validate_status(updates["status"]):
-            valid_statuses = ", ".join(ContentModel.VALID_STATUSES)
+        if "status" in updates and not ContentStatus.is_valid(updates["status"]):
+            valid_statuses = ", ".join(ContentStatus.get_valid_statuses())
             raise ContentValidationError(f"Invalid status: {updates['status']}. Valid statuses: {valid_statuses}")
             
         # Validate workflow statuses if changing
         for status_field in ["rag_status", "training_status", "licensing_status"]:
-            if status_field in updates and not ContentModel.validate_workflow_status(updates[status_field]):
-                valid_statuses = ", ".join(ContentModel.VALID_WORKFLOW_STATUSES)
+            if status_field in updates and not WorkflowStatus.is_valid(updates[status_field]):
+                valid_statuses = ", ".join(WorkflowStatus.get_valid_statuses())
                 raise ContentValidationError(f"Invalid {status_field}: {updates[status_field]}. Valid values: {valid_statuses}")
         
         # Add updated_at timestamp
@@ -133,7 +126,7 @@ class ContentHelper:
         
         return self.db.update_item("content_id", content_id, updates)
 
-    @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
+    @Retry(max_attempts=DEFAULT_RETRY_MAX_ATTEMPTS, initial_wait=DEFAULT_RETRY_INITIAL_WAIT, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
     def update_content_attribute(self, content_id: str, attribute: str, value: Any) -> Dict:
         """
         Update a single attribute of content with validation.
@@ -162,24 +155,10 @@ class ContentHelper:
         if not content:
             raise ContentValidationError(f"Content not found with ID: {content_id}")
             
-        # Parse the attribute path
-        parts = attribute.split(".")
-        top_level = parts[0]
-        
-        # Currently only supports metadata.field notation
-        if top_level != "metadata" or len(parts) != 2:
-            raise ContentValidationError(f"Invalid attribute path: {attribute}. Only metadata.field notation is supported.")
-            
-        # Get the current metadata
-        metadata = dict(content.get("metadata", {}))
-        
-        # Update the specific field
-        metadata[parts[1]] = value
-        
-        # Update the entire metadata
-        return self.update_content_metadata(content_id, {"metadata": metadata})
+        # For now, nested attribute updates are not supported
+        raise ContentValidationError(f"Nested attribute updates are not currently supported: {attribute}")
 
-    @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
+    @Retry(max_attempts=DEFAULT_RETRY_MAX_ATTEMPTS, initial_wait=DEFAULT_RETRY_INITIAL_WAIT, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
     def archive_content(self, content_id: str) -> Dict:
         """
         Archive content by setting its status to ARCHIVED.
@@ -193,7 +172,7 @@ class ContentHelper:
         logger.info("Archiving content_id: %s", content_id)
         return self.update_content_metadata(content_id, {"status": ContentStatus.ARCHIVED.value})
         
-    @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
+    @Retry(max_attempts=DEFAULT_RETRY_MAX_ATTEMPTS, initial_wait=DEFAULT_RETRY_INITIAL_WAIT, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
     def search_content(self, search_params: Dict, limit: int = None, 
                       pagination_token: str = None) -> Dict:
         """
@@ -202,13 +181,9 @@ class ContentHelper:
         
         Args:
             search_params: Dictionary of search parameters, which can include:
-                - publisher_id: Filter by publisher 
-                - type: Content type (BOOK, VIDEO, AUDIO, DATASET, TEXT)
-                - title: Full or partial title match
-                - tags: List of tags to filter by
-                - status: Content status (DRAFT, ACTIVE, ARCHIVED)
-                - rag_status, training_status, licensing_status: Workflow statuses
-                - Any metadata fields for type-specific attributes
+                - type: Content type (BOOK, AUDIO, etc.)
+                - Any type-specific fields (e.g., authors, publisher for BOOK type)
+                - Status fields (rag_status, training_status, licensing_status)
             limit: Optional maximum number of items to return
             pagination_token: Optional pagination token from previous query
                 
@@ -255,7 +230,8 @@ class ContentHelper:
             Query result with items and pagination info, including the limit
         """
         # Try to use GSIs for efficiency when possible
-        indexable_fields = ["publisher_id", "type", "status"]
+        # For the new model, we might have different indexable fields
+        indexable_fields = ["type", "status"]
         
         for field in indexable_fields:
             if field in search_params:
@@ -303,27 +279,8 @@ class ContentHelper:
             True if the item matches all criteria, False otherwise
         """
         for key, value in search_params.items():
-            # Handle nested attribute paths (e.g., metadata.field)
-            if "." in key:
-                parts = key.split(".")
-                if len(parts) != 2 or parts[0] != "metadata":
-                    # Currently only support metadata.field notation
-                    continue
-                    
-                metadata = item.get("metadata", {})
-                metadata_key = parts[1]
-                
-                # Skip if the metadata key doesn't exist
-                if metadata_key not in metadata:
-                    return False
-                    
-                # Compare the metadata value
-                metadata_value = metadata[metadata_key]
-                if not self._values_match(metadata_value, value):
-                    return False
-                    
             # Handle standard fields
-            elif key in item:
+            if key in item:
                 if not self._values_match(item[key], value):
                     return False
                     
@@ -354,7 +311,7 @@ class ContentHelper:
         if isinstance(item_value, str) and isinstance(search_value, str):
             return search_value.lower() in item_value.lower()
             
-        # Handle lists (e.g., tags) with any-match semantics
+        # Handle lists (e.g., tags, authors, keywords) with any-match semantics
         elif isinstance(item_value, list):
             if isinstance(search_value, list):
                 # If search value is also a list, check if any value matches

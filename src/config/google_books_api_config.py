@@ -14,6 +14,15 @@ DEFAULT_FIELDS = BookDefaultFields.DEFAULT_FIELDS
 # Mandatory fields that will always be included in responses
 MANDATORY_FIELDS = BookDefaultFields.MANDATORY_FIELDS
 
+# Retry configuration
+DEFAULT_RETRY_MAX_ATTEMPTS = 3
+DEFAULT_RETRY_INITIAL_WAIT = 1.0
+
+# Pagination settings
+DEFAULT_MAX_RESULTS = 100
+ITEMS_PER_PAGE = 40  # Google Books API maximum
+RATE_LIMIT_DELAY = 0.2  # Delay between API requests in seconds
+
 # Field mappings between Google Books API response and our standardized format
 FIELD_MAPPINGS = {
     BookField.ISBN.value: "industryIdentifiers",  # Special handling required for ISBN

@@ -6,16 +6,22 @@ from helpers.aws_service_helpers.dynamodb_helper import DynamoDBHelper
 from helpers.aws_service_helpers.s3_helper import S3Helper
 from helpers.common_helper.logger_helper import LoggerHelper
 from models.usage_log_model import UsageLogModel
+from config.analytics_config import (
+    USAGE_LOGS_TABLE_NAME,
+    EXPORT_BUCKET_NAME,
+    DEFAULT_ACCESS_TYPE,
+    DEFAULT_REGION,
+    DEFAULT_PUBLISHER_ID,
+    DEFAULT_EXPORT_FORMAT,
+    RECENT_LOGS_LIMIT
+)
 
 logger = LoggerHelper(__name__).get_logger()
 
-USAGE_LOGS_TABLE = "usage_logs"
-EXPORT_BUCKET = "knowlio-exports"
-
 class AnalyticsHelper:
     def __init__(self):
-        self.db = DynamoDBHelper(table_name=USAGE_LOGS_TABLE)
-        self.s3 = S3Helper(bucket_name=EXPORT_BUCKET)
+        self.db = DynamoDBHelper(table_name=USAGE_LOGS_TABLE_NAME)
+        self.s3 = S3Helper(bucket_name=EXPORT_BUCKET_NAME)
 
     def log_content_access(self, log_data: Dict) -> Dict:
         """Log content access by a consumer"""
@@ -44,11 +50,11 @@ class AnalyticsHelper:
         
         for log in logs:
             # Count access types
-            access_type = log.get("access_type", "VIEW")
+            access_type = log.get("access_type", DEFAULT_ACCESS_TYPE)
             access_types[access_type] = access_types.get(access_type, 0) + 1
             
             # Count regions
-            region = log.get("region", "UNKNOWN")
+            region = log.get("region", DEFAULT_REGION)
             regions[region] = regions.get(region, 0) + 1
 
         return {
@@ -57,7 +63,7 @@ class AnalyticsHelper:
             "unique_consumers": unique_consumers,
             "access_types": access_types,
             "regions": regions,
-            "recent_logs": logs[:10]  # Return 10 most recent logs
+            "recent_logs": logs[:RECENT_LOGS_LIMIT]  # Return most recent logs
         }
 
     def get_usage_report_by_consumer(self, consumer_id: str) -> Dict:
@@ -75,11 +81,11 @@ class AnalyticsHelper:
         
         for log in logs:
             # Count access types
-            access_type = log.get("access_type", "VIEW")
+            access_type = log.get("access_type", DEFAULT_ACCESS_TYPE)
             access_types[access_type] = access_types.get(access_type, 0) + 1
             
             # Count publishers
-            publisher_id = log.get("publisher_id", "UNKNOWN")
+            publisher_id = log.get("publisher_id", DEFAULT_PUBLISHER_ID)
             publishers[publisher_id] = publishers.get(publisher_id, 0) + 1
 
         return {
@@ -88,14 +94,14 @@ class AnalyticsHelper:
             "unique_content": unique_content,
             "access_types": access_types,
             "publishers": publishers,
-            "recent_logs": logs[:10]  # Return 10 most recent logs
+            "recent_logs": logs[:RECENT_LOGS_LIMIT]  # Return most recent logs
         }
 
     def export_usage_logs(self, export_params: Dict) -> Dict:
         """Export logs to S3 in JSONL format for audit/reporting"""
         from_date = export_params.get("from_date")
         to_date = export_params.get("to_date")
-        format_type = export_params.get("format", "jsonl")
+        format_type = export_params.get("format", DEFAULT_EXPORT_FORMAT)
         region_filter = export_params.get("region")
 
         logger.info("Exporting usage logs from %s to %s", from_date, to_date)

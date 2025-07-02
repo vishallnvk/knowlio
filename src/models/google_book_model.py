@@ -8,7 +8,7 @@ from datetime import datetime
 from enums.book_fields import BookField, BookDefaultFields, BookDataSource
 
 
-class BookModel:
+class GoogleBookModel:
     """
     Model representing a book from Google Books API with all its details.
     """

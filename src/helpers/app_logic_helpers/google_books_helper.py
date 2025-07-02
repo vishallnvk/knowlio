@@ -12,12 +12,17 @@ from typing import Dict, List, Optional, Any
 
 from helpers.common_helper.logger_helper import LoggerHelper
 from helpers.common_helper.common_helper import Retry
-from models.book_model import BookModel
+from models.google_book_model import GoogleBookModel
 from config.google_books_api_config import (
     GOOGLE_BOOKS_API_BASE_URL,
     DEFAULT_FIELDS,
     MANDATORY_FIELDS,
-    FIELD_MAPPINGS
+    FIELD_MAPPINGS,
+    DEFAULT_RETRY_MAX_ATTEMPTS,
+    DEFAULT_RETRY_INITIAL_WAIT,
+    DEFAULT_MAX_RESULTS,
+    ITEMS_PER_PAGE,
+    RATE_LIMIT_DELAY
 )
 
 logger = LoggerHelper(__name__).get_logger()
@@ -26,7 +31,7 @@ class GoogleBooksHelper:
     def __init__(self):
         self.api_base_url = GOOGLE_BOOKS_API_BASE_URL
 
-    @Retry(max_attempts=3, initial_wait=1.0, exceptions=[urllib.error.URLError, json.JSONDecodeError])
+    @Retry(max_attempts=DEFAULT_RETRY_MAX_ATTEMPTS, initial_wait=DEFAULT_RETRY_INITIAL_WAIT, exceptions=[urllib.error.URLError, json.JSONDecodeError])
     def get_book_details(self, isbn: str) -> Dict[str, Any]:
         """
         Fetch book details from Google Books API using ISBN.
@@ -55,8 +60,8 @@ class GoogleBooksHelper:
             volume_info = data['items'][0]['volumeInfo']
             logger.debug(f"Found book: {volume_info.get('title', 'Unknown')}")
             
-            # Use the BookModel to process and return the full book data
-            book = BookModel({
+            # Use the GoogleBookModel to process and return the full book data
+            book = GoogleBookModel({
                 'volumeInfo': volume_info,
                 'isbn': isbn,
                 'id': data['items'][0].get('id')
@@ -76,7 +81,7 @@ class GoogleBooksHelper:
             logger.error(f"Unexpected error: {str(e)}")
             return {"error": f"An unexpected error occurred: {str(e)}"}
 
-    @Retry(max_attempts=3, initial_wait=1.0, exceptions=[urllib.error.URLError, json.JSONDecodeError])
+    @Retry(max_attempts=DEFAULT_RETRY_MAX_ATTEMPTS, initial_wait=DEFAULT_RETRY_INITIAL_WAIT, exceptions=[urllib.error.URLError, json.JSONDecodeError])
     def get_book_details_filtered(self, isbn: str, fields: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Fetch book details with only specified fields plus mandatory fields.
@@ -102,15 +107,15 @@ class GoogleBooksHelper:
         # Ensure mandatory fields are always included
         fields_to_include = set(fields).union(set(MANDATORY_FIELDS))
         
-        # Create a BookModel and use its filtering method
-        book_model = BookModel(book_data)
+        # Create a GoogleBookModel and use its filtering method
+        book_model = GoogleBookModel(book_data)
         filtered_data = book_model.filter_fields(fields_to_include)
         
         logger.debug(f"Filtered book data to fields: {list(filtered_data.keys())}")
         return filtered_data
 
-    @Retry(max_attempts=3, initial_wait=1.0, exceptions=[urllib.error.URLError, json.JSONDecodeError])
-    def get_books_by_author_filtered(self, author_name: str, fields: Optional[List[str]] = None, max_results: int = 100) -> Dict[str, Any]:
+    @Retry(max_attempts=DEFAULT_RETRY_MAX_ATTEMPTS, initial_wait=DEFAULT_RETRY_INITIAL_WAIT, exceptions=[urllib.error.URLError, json.JSONDecodeError])
+    def get_books_by_author_filtered(self, author_name: str, fields: Optional[List[str]] = None, max_results: int = DEFAULT_MAX_RESULTS) -> Dict[str, Any]:
         """
         Fetch all books by a specific author with only specified fields.
         
@@ -139,8 +144,8 @@ class GoogleBooksHelper:
         # Filter each book to include only the requested fields
         filtered_books = []
         for book in result["books"]:
-            # Create a BookModel and use its filtering method
-            book_model = BookModel(book)
+            # Create a GoogleBookModel and use its filtering method
+            book_model = GoogleBookModel(book)
             filtered_book = book_model.filter_fields(fields_to_include)
             filtered_books.append(filtered_book)
         
@@ -148,8 +153,8 @@ class GoogleBooksHelper:
         result["books"] = filtered_books
         return result
 
-    @Retry(max_attempts=3, initial_wait=1.0, exceptions=[urllib.error.URLError, json.JSONDecodeError])
-    def get_books_by_author(self, author_name: str, max_results: int = 100) -> Dict[str, Any]:
+    @Retry(max_attempts=DEFAULT_RETRY_MAX_ATTEMPTS, initial_wait=DEFAULT_RETRY_INITIAL_WAIT, exceptions=[urllib.error.URLError, json.JSONDecodeError])
+    def get_books_by_author(self, author_name: str, max_results: int = DEFAULT_MAX_RESULTS) -> Dict[str, Any]:
         """
         Fetch all books by a specific author from Google Books API.
         Handles pagination to return a complete list up to max_results.
@@ -169,7 +174,7 @@ class GoogleBooksHelper:
         
         all_books = []
         start_index = 0
-        items_per_page = min(40, max_results)  # Google Books API maximum is 40 per page
+        items_per_page = min(ITEMS_PER_PAGE, max_results)  # Google Books API maximum per page
         
         try:
             # Loop through pages until we have all results or hit max_results
@@ -213,7 +218,7 @@ class GoogleBooksHelper:
                                 isbn = id_item.get('identifier')
                         
                         # Create a book model and add its dictionary representation to results
-                        book_model = BookModel({
+                        book_model = GoogleBookModel({
                             'volumeInfo': volume_info,
                             'isbn': isbn,
                             'id': item.get('id')
@@ -234,8 +239,8 @@ class GoogleBooksHelper:
                     break
                     
                 # To avoid overwhelming the API, add a small delay between requests
-                # In production, you might want to implement a more sophisticated rate limiter
-                time.sleep(0.2)
+                # Using configured rate limit delay
+                time.sleep(RATE_LIMIT_DELAY)
             
             logger.info(f"Found {len(all_books)} books by author: {author_name}")
             return {
