@@ -18,12 +18,16 @@ class UserModel:
         # AI Training consent fields
         self.ai_training_consent: bool = user_data.get("ai_training_consent", False)
         self.ai_training_consent_date: Optional[str] = user_data.get("ai_training_consent_date")
-        self.ai_training_agreement_version: Optional[str] = user_data.get("ai_training_agreement_version")
         
         # AI Reference consent fields
         self.ai_reference_consent: bool = user_data.get("ai_reference_consent", False)
         self.ai_reference_consent_date: Optional[str] = user_data.get("ai_reference_consent_date")
         
-        # AI Marketplace discoverability consent fields
+        # AI Marketplace consent fields
         self.ai_marketplace_consent: bool = user_data.get("ai_marketplace_consent", False)
         self.ai_marketplace_consent_date: Optional[str] = user_data.get("ai_marketplace_consent_date")
+        
+        # AI User Agreement consent fields
+        self.ai_user_agreement_consent: bool = user_data.get("ai_user_agreement_consent", False)
+        self.ai_user_agreement_consent_date: Optional[str] = user_data.get("ai_user_agreement_consent_date")
+        self.ai_user_agreement_version: Optional[str] = user_data.get("ai_user_agreement_version")

@@ -8,6 +8,7 @@ from helpers.common_helper.auth_helper import require_role, get_authenticated_us
 from helpers.common_helper.auth_context import AuthContext
 from helpers.common_helper.response_formatter import ResponseFormatter
 from helpers.app_logic_helpers.content_helper import ContentHelper, ContentValidationError
+from helpers.app_logic_helpers.google_books_helper import GoogleBooksHelper
 from sync_processor_registry.processor_registry import ProcessorRegistry
 from sync_processors.base_processor import BaseProcessor
 from enums.content_status import ContentStatus, WorkflowStatus
@@ -22,6 +23,7 @@ logger = LoggerHelper(__name__).get_logger()
 class ContentProcessor(BaseProcessor):
     def __init__(self):
         self.helper = ContentHelper()
+        self.google_books_helper = GoogleBooksHelper()
         super().__init__({
             "upload_content_metadata": self._upload_content_metadata,
             "upload_content_blob": self._upload_content_blob,
@@ -106,9 +108,13 @@ class ContentProcessor(BaseProcessor):
         Required payload keys:
         - type: Content type (BOOK, AUDIO, etc.)
         
-        For BOOK type, required keys:
+        For BOOK type, two modes supported:
+        
+        Mode 1 - ISBN Only (Recommended):
+        - isbn: ISBN number (system will fetch all other details from Google Books API)
+        
+        Mode 2 - Full Details:
         - authors: List of authors
-        - publisher: Publisher name
         - year: Publication year
         - isbn: ISBN number
         - title: Book title
@@ -128,22 +134,36 @@ class ContentProcessor(BaseProcessor):
                 message, code = ResponseFormatter.extract_error_info(error)
                 return ResponseFormatter.format_error(message, ResponseFormatter.ERROR_CODES["VALIDATION_ERROR"])
             
+            # Special handling for BOOK type with ISBN-only uploads
+            if payload["type"].upper() == "BOOK" and self._is_isbn_only_upload(payload):
+                logger.info("Detected ISBN-only book upload, fetching details from Google Books API")
+                payload = self._enrich_book_from_isbn(payload)
+                
+                # Check if enrichment failed
+                if "error" in payload:
+                    return ResponseFormatter.format_error(
+                        payload["error"], 
+                        ResponseFormatter.ERROR_CODES["EXTERNAL_SERVICE_ERROR"]
+                    )
+            
             # Validate workflow status fields if present
             error = self._validate_workflow_status_fields(payload)
             if error:
                 message, code = ResponseFormatter.extract_error_info(error)
                 return ResponseFormatter.format_error(message, ResponseFormatter.ERROR_CODES["VALIDATION_ERROR"])
             
+            # Add authenticated user info for audit trail if available
+            auth_context = AuthContext.from_payload(payload)
+            if auth_context.is_authenticated():
+                # Add publisher_id from authenticated user
+                payload["publisher_id"] = auth_context.user_id
+                logger.info(f"User {auth_context.user_id} ({auth_context.role}) creating {payload['type']} content")
+            
             # Create the appropriate content model using the factory
             try:
                 content = ContentFactory.create_content(payload["type"], payload)
             except ValueError as e:
                 return ResponseFormatter.format_error(str(e), ResponseFormatter.ERROR_CODES["VALIDATION_ERROR"])
-            
-            # Add authenticated user info for audit trail if available
-            auth_context = AuthContext.from_payload(payload)
-            if auth_context.is_authenticated():
-                logger.info(f"User {auth_context.user_id} ({auth_context.role}) creating {payload['type']} content")
             
             # Convert content model to dict and save to database
             content_dict = content.to_dict()
@@ -441,10 +461,14 @@ class ContentProcessor(BaseProcessor):
                 else:
                     # Use all parameters directly as search criteria
                     search_params = payload.copy()
-                    # Remove pagination parameters
+                    # Remove pagination and API processing parameters
                     search_params.pop("limit", None)
                     search_params.pop("pagination_token", None)
                     search_params.pop("__action__", None)
+                    # Remove API processing artifacts that shouldn't be used for content searching
+                    search_params.pop("_headers", None)
+                    search_params.pop("auth_context", None)
+                    search_params.pop("userData", None)
             
             # Validate status parameter if provided
             error = self._validate_content_status(search_params)
@@ -491,3 +515,119 @@ class ContentProcessor(BaseProcessor):
             logger.error(f"Error searching content: {str(e)}")
             return ResponseFormatter.format_error(f"Failed to search content: {str(e)}", 
                                                ResponseFormatter.ERROR_CODES["INTERNAL_ERROR"])
+
+    def _is_isbn_only_upload(self, payload: Dict) -> bool:
+        """
+        Check if this is an ISBN-only book upload (only type and isbn provided).
+        
+        Args:
+            payload: Request payload dictionary
+            
+        Returns:
+            True if this is an ISBN-only upload, False otherwise
+        """
+        # Required fields for ISBN-only upload
+        has_isbn = "isbn" in payload and payload["isbn"]
+        
+        # Fields that indicate full manual entry (not ISBN-only)
+        manual_fields = ["title", "authors", "year", "keywords"]
+        has_manual_fields = any(field in payload for field in manual_fields)
+        
+        # It's ISBN-only if we have ISBN but no manual fields
+        return has_isbn and not has_manual_fields
+    
+    def _enrich_book_from_isbn(self, payload: Dict) -> Dict:
+        """
+        Enrich book payload by fetching details from Google Books API using ISBN.
+        
+        Args:
+            payload: Original payload with ISBN
+            
+        Returns:
+            Enriched payload with book details or error payload if enrichment fails
+        """
+        isbn = payload.get("isbn")
+        if not isbn:
+            return {"error": "ISBN is required for book enrichment"}
+        
+        logger.info(f"Enriching book data for ISBN: {isbn}")
+        
+        try:
+            # Get book details from Google Books API
+            google_book_data = self.google_books_helper.get_book_details(isbn)
+            
+            # Check if Google Books API returned an error
+            if "error" in google_book_data:
+                logger.warning(f"Google Books API error for ISBN {isbn}: {google_book_data['error']}")
+                return {"error": f"Failed to fetch book details from Google Books: {google_book_data['error']}"}
+            
+            # Map Google Books fields to our BookContent model fields
+            enriched_payload = payload.copy()
+            
+            # Core book information
+            if google_book_data.get("title"):
+                enriched_payload["title"] = google_book_data["title"]
+            
+            if google_book_data.get("authors"):
+                enriched_payload["authors"] = google_book_data["authors"]
+            
+            # Add publisher information
+            if google_book_data.get("publisher"):
+                enriched_payload["publisher"] = google_book_data["publisher"]
+            
+            # Extract year from publishedDate (e.g., "2007-03-28" -> "2007")  
+            if google_book_data.get("publishedDate"):
+                published_date = google_book_data["publishedDate"]
+                try:
+                    # Extract year from various date formats
+                    if "-" in published_date:
+                        year = published_date.split("-")[0]
+                    else:
+                        year = published_date[:4]  # Take first 4 characters as year
+                    enriched_payload["year"] = year
+                except (ValueError, IndexError):
+                    logger.warning(f"Could not parse year from publishedDate: {published_date}")
+            
+            # Create keywords from categories and description
+            keywords = []
+            
+            # Add categories as keywords
+            if google_book_data.get("categories"):
+                keywords.extend(google_book_data["categories"])
+            
+            # Extract keywords from description (simple approach - take meaningful words)
+            if google_book_data.get("description"):
+                description = google_book_data["description"]
+                # Extract some meaningful keywords from description
+                # This is a simple implementation - could be enhanced with NLP
+                description_words = description.lower().split()
+                meaningful_words = [
+                    word.strip(".,!?;:\"'()[]{}") 
+                    for word in description_words 
+                    if len(word) > 4 and word.isalpha()
+                ]
+                # Take first few meaningful words to avoid too many keywords
+                keywords.extend(meaningful_words[:5])
+            
+            # Remove duplicates and empty values
+            keywords = list(set(filter(None, keywords)))
+            if keywords:
+                enriched_payload["keywords"] = keywords
+            
+            # Ensure ISBN is preserved
+            enriched_payload["isbn"] = isbn
+            
+            # Set default workflow statuses if not provided
+            if "rag_status" not in enriched_payload:
+                enriched_payload["rag_status"] = "DISABLED"
+            if "training_status" not in enriched_payload:
+                enriched_payload["training_status"] = "DISABLED"
+            if "licensing_status" not in enriched_payload:
+                enriched_payload["licensing_status"] = "DISABLED"
+            
+            logger.info(f"Successfully enriched book data for ISBN {isbn}: {enriched_payload.get('title', 'Unknown Title')}")
+            return enriched_payload
+            
+        except Exception as e:
+            logger.error(f"Error enriching book data for ISBN {isbn}: {str(e)}")
+            return {"error": f"Failed to enrich book data: {str(e)}"}

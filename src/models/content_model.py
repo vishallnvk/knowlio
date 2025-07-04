@@ -5,15 +5,19 @@ import uuid
 
 class ContentModel:
     """
-    Base content model with only content_id as the common attribute.
+    Base content model with common attributes for all content types.
     All content types will inherit from this base class.
     """
     
-    def __init__(self, content_id: str = None):
+    def __init__(self, content_id: str = None, publisher_id: str = None, insert_time: str = None):
         self.content_id: str = content_id or str(uuid.uuid4())
+        self.publisher_id: str = publisher_id
+        self.insert_time: str = insert_time or datetime.utcnow().isoformat()
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert the model to a dictionary representation."""
         return {
-            "content_id": self.content_id
+            "content_id": self.content_id,
+            "publisher_id": self.publisher_id,
+            "insert_time": self.insert_time
         }

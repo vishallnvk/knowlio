@@ -91,6 +91,26 @@ class KnowlioApiRoutes:
                 auth_required=True,
                 allowed_groups=["Admin"]
             ),
+            ApiRoute(
+                method="POST",
+                path="users/{user_id}/ai-consents",
+                processor_name="user",
+                action="update_ai_consents",
+                description="Update AI consent preferences (training, reference, marketplace)",
+                path_parameters=["user_id"],
+                auth_required=True,
+                allowed_groups=["Admin", "Publisher", "Consumer"]
+            ),
+            ApiRoute(
+                method="POST",
+                path="users/{user_id}/user-agreement",
+                processor_name="user",
+                action="update_user_agreement",
+                description="Sign user agreement with version tracking",
+                path_parameters=["user_id"],
+                auth_required=True,
+                allowed_groups=["Admin", "Publisher", "Consumer"]
+            ),
             
             # Content Management Routes - Restructured to avoid path parameter conflicts
             ApiRoute(

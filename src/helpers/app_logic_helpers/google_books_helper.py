@@ -52,6 +52,9 @@ class GoogleBooksHelper:
                 response_data = response.read().decode('utf-8')
                 data = json.loads(response_data)
             
+            # Log the Google Books API response for debugging
+            logger.info(f"Google Books API response for ISBN {isbn}: {json.dumps(data, indent=2)}")
+            
             if data.get('totalItems', 0) == 0:
                 logger.warning(f"No books found for ISBN: {isbn}")
                 return {"error": f"No book found with ISBN {isbn}"}

@@ -1,4 +1,5 @@
 from typing import Dict, Any, List
+from datetime import datetime
 
 from helpers.common_helper.common_helper import require_keys
 from helpers.common_helper.logger_helper import LoggerHelper
@@ -22,6 +23,8 @@ class UserProcessor(BaseProcessor):
             "register_user": self._register_user,
             "get_user_profile": self._get_user_profile,
             "update_user_profile": self._update_user_profile,
+            "update_ai_consents": self._update_ai_consents,
+            "update_user_agreement": self._update_user_agreement, 
             "search_users": self._search_users,
             "admin_update_user": self._admin_update_user,
         })
@@ -235,4 +238,116 @@ class UserProcessor(BaseProcessor):
         except Exception as e:
             logger.error(f"Error in admin_update_user: {str(e)}")
             return ResponseFormatter.format_error(f"Failed to update user: {str(e)}", 
+                                               ResponseFormatter.ERROR_CODES["INTERNAL_ERROR"])
+
+    def _update_ai_consents(self, payload: Dict) -> Dict:
+        """
+        Update AI consent attributes from the consent selection UI page.
+        Automatically sets current UTC timestamp for corresponding date fields.
+        
+        Required payload keys:
+        - user_id: ID of user to update
+        
+        Optional payload keys (at least one required):
+        - ai_training_consent: Boolean consent for AI training
+        - ai_reference_consent: Boolean consent for AI reference
+        - ai_marketplace_consent: Boolean consent for AI marketplace
+        """
+        try:
+            require_keys(payload, ["user_id"])
+            
+            user_id = payload["user_id"]
+            
+            # Build updates dictionary with automatic timestamp handling
+            updates = {}
+            current_utc_time = datetime.utcnow().isoformat() + "Z"
+            
+            # Handle AI training consent
+            if "ai_training_consent" in payload:
+                updates["ai_training_consent"] = payload["ai_training_consent"]
+                updates["ai_training_consent_date"] = current_utc_time
+                
+            # Handle AI reference consent  
+            if "ai_reference_consent" in payload:
+                updates["ai_reference_consent"] = payload["ai_reference_consent"]
+                updates["ai_reference_consent_date"] = current_utc_time
+                
+            # Handle AI marketplace consent
+            if "ai_marketplace_consent" in payload:
+                updates["ai_marketplace_consent"] = payload["ai_marketplace_consent"]
+                updates["ai_marketplace_consent_date"] = current_utc_time
+            
+            # Validate that at least one consent field was provided
+            consent_fields = ["ai_training_consent", "ai_reference_consent", "ai_marketplace_consent"]
+            if not any(field in payload for field in consent_fields):
+                return ResponseFormatter.format_error(
+                    "At least one AI consent field must be provided",
+                    ResponseFormatter.ERROR_CODES["VALIDATION_ERROR"]
+                )
+            
+            # Log the consent update
+            auth_context = AuthContext.from_payload(payload)
+            logger.info(f"User {user_id} updating AI consents: {list(updates.keys())}")
+            
+            # Call the existing update_user_profile method internally
+            update_payload = {
+                "user_id": user_id,
+                "updates": updates
+            }
+            
+            # Preserve auth context for the internal call
+            if auth_context.is_authenticated():
+                update_payload["auth_context"] = payload.get("auth_context")
+            
+            return self._update_user_profile(update_payload)
+            
+        except Exception as e:
+            logger.error(f"Error updating AI consents for user {payload.get('user_id')}: {str(e)}")
+            return ResponseFormatter.format_error(f"Failed to update AI consents: {str(e)}", 
+                                               ResponseFormatter.ERROR_CODES["INTERNAL_ERROR"])
+
+    def _update_user_agreement(self, payload: Dict) -> Dict:
+        """
+        Update AI user agreement consent from the agreement signing UI page.
+        Automatically sets current UTC timestamp for the consent date.
+        
+        Required payload keys:
+        - user_id: ID of user to update
+        - ai_user_agreement_consent: Boolean consent for user agreement
+        - ai_user_agreement_version: Version of the agreement being signed
+        """
+        try:
+            require_keys(payload, ["user_id", "ai_user_agreement_consent", "ai_user_agreement_version"])
+            
+            user_id = payload["user_id"]
+            consent = payload["ai_user_agreement_consent"]
+            version = payload["ai_user_agreement_version"]
+            
+            # Build updates with automatic timestamp
+            current_utc_time = datetime.utcnow().isoformat() + "Z"
+            updates = {
+                "ai_user_agreement_consent": consent,
+                "ai_user_agreement_consent_date": current_utc_time,
+                "ai_user_agreement_version": version
+            }
+            
+            # Log the agreement update
+            auth_context = AuthContext.from_payload(payload)
+            logger.info(f"User {user_id} signing user agreement version {version} with consent: {consent}")
+            
+            # Call the existing update_user_profile method internally
+            update_payload = {
+                "user_id": user_id,
+                "updates": updates
+            }
+            
+            # Preserve auth context for the internal call
+            if auth_context.is_authenticated():
+                update_payload["auth_context"] = payload.get("auth_context")
+            
+            return self._update_user_profile(update_payload)
+            
+        except Exception as e:
+            logger.error(f"Error updating user agreement for user {payload.get('user_id')}: {str(e)}")
+            return ResponseFormatter.format_error(f"Failed to update user agreement: {str(e)}", 
                                                ResponseFormatter.ERROR_CODES["INTERNAL_ERROR"])
