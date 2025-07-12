@@ -286,28 +286,34 @@ class UserProcessor(BaseProcessor):
             if error:
                 return error
             
+            # Extract consent data - check if nested in 'payload' key first
+            consent_data = payload
+            if "payload" in payload and isinstance(payload["payload"], dict):
+                # Handle case where consent fields are nested
+                consent_data = payload["payload"]
+            
             # Build updates dictionary with automatic timestamp handling
             updates = {}
             current_utc_time = datetime.utcnow().isoformat() + "Z"
             
             # Handle AI training consent
-            if "ai_training_consent" in payload:
-                updates["ai_training_consent"] = payload["ai_training_consent"]
+            if "ai_training_consent" in consent_data:
+                updates["ai_training_consent"] = consent_data["ai_training_consent"]
                 updates["ai_training_consent_date"] = current_utc_time
                 
             # Handle AI reference consent  
-            if "ai_reference_consent" in payload:
-                updates["ai_reference_consent"] = payload["ai_reference_consent"]
+            if "ai_reference_consent" in consent_data:
+                updates["ai_reference_consent"] = consent_data["ai_reference_consent"]
                 updates["ai_reference_consent_date"] = current_utc_time
                 
             # Handle AI marketplace consent
-            if "ai_marketplace_consent" in payload:
-                updates["ai_marketplace_consent"] = payload["ai_marketplace_consent"]
+            if "ai_marketplace_consent" in consent_data:
+                updates["ai_marketplace_consent"] = consent_data["ai_marketplace_consent"]
                 updates["ai_marketplace_consent_date"] = current_utc_time
             
             # Validate that at least one consent field was provided
             consent_fields = ["ai_training_consent", "ai_reference_consent", "ai_marketplace_consent"]
-            if not any(field in payload for field in consent_fields):
+            if not any(field in consent_data for field in consent_fields):
                 return ResponseFormatter.format_error(
                     "At least one AI consent field must be provided",
                     ResponseFormatter.ERROR_CODES["VALIDATION_ERROR"]
@@ -342,11 +348,17 @@ class UserProcessor(BaseProcessor):
             user_id, error = self._get_authenticated_user_id(payload)
             if error:
                 return error
-                
-            require_keys(payload, ["ai_user_agreement_consent", "ai_user_agreement_version"])
             
-            consent = payload["ai_user_agreement_consent"]
-            version = payload["ai_user_agreement_version"]
+            # Extract agreement data - check if nested in 'payload' key first
+            agreement_data = payload
+            if "payload" in payload and isinstance(payload["payload"], dict):
+                # Handle case where agreement fields are nested
+                agreement_data = payload["payload"]
+                
+            require_keys(agreement_data, ["ai_user_agreement_consent", "ai_user_agreement_version"])
+            
+            consent = agreement_data["ai_user_agreement_consent"]
+            version = agreement_data["ai_user_agreement_version"]
             
             # Build updates with automatic timestamp
             current_utc_time = datetime.utcnow().isoformat() + "Z"
