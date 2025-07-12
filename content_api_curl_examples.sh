@@ -9,8 +9,20 @@ AUTH_TOKEN="your-auth-token-here"
 
 echo "=== Content API CURL Examples ==="
 
-# 1. Upload Book Content Metadata
-echo "1. Upload Book Content Metadata:"
+# 1. Upload Book Content Metadata - ISBN Only (Recommended)
+echo "1. Upload Book Content Metadata - ISBN Only (Recommended):"
+curl -X POST "${API_URL}/content/metadata/upload" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${AUTH_TOKEN}" \
+  -d '{
+    "type": "BOOK",
+    "isbn": "978-0-132350-88-4"
+  }'
+
+echo -e "\n\n"
+
+# 1b. Upload Book Content Metadata - Full Details (Alternative)
+echo "1b. Upload Book Content Metadata - Full Details (Alternative):"
 curl -X POST "${API_URL}/content/metadata/upload" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer ${AUTH_TOKEN}" \
@@ -18,7 +30,6 @@ curl -X POST "${API_URL}/content/metadata/upload" \
     "type": "BOOK",
     "title": "The Art of Software Engineering",
     "authors": ["John Doe", "Jane Smith"],
-    "publisher": "Tech Publications Inc.",
     "year": "2024",
     "isbn": "978-1234567890",
     "keywords": ["software", "engineering", "best practices"],

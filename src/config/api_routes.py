@@ -93,21 +93,37 @@ class KnowlioApiRoutes:
             ),
             ApiRoute(
                 method="POST",
-                path="users/{user_id}/ai-consents",
+                path="users/ai-consents",
                 processor_name="user",
                 action="update_ai_consents",
                 description="Update AI consent preferences (training, reference, marketplace)",
-                path_parameters=["user_id"],
                 auth_required=True,
                 allowed_groups=["Admin", "Publisher", "Consumer"]
             ),
             ApiRoute(
                 method="POST",
-                path="users/{user_id}/user-agreement",
+                path="users/user-agreement",
                 processor_name="user",
                 action="update_user_agreement",
                 description="Sign user agreement with version tracking",
-                path_parameters=["user_id"],
+                auth_required=True,
+                allowed_groups=["Admin", "Publisher", "Consumer"]
+            ),
+            ApiRoute(
+                method="POST",
+                path="users/ai-consent-attributes",
+                processor_name="user",
+                action="get_ai_consent_attributes",
+                description="Get all AI consent attributes (training, reference, marketplace)",
+                auth_required=True,
+                allowed_groups=["Admin", "Publisher", "Consumer"]
+            ),
+            ApiRoute(
+                method="POST",
+                path="users/agreement-attributes",
+                processor_name="user",
+                action="get_user_agreement_attributes",
+                description="Get user agreement attributes only",
                 auth_required=True,
                 allowed_groups=["Admin", "Publisher", "Consumer"]
             ),

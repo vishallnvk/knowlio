@@ -27,7 +27,29 @@ class UserProcessor(BaseProcessor):
             "update_user_agreement": self._update_user_agreement, 
             "search_users": self._search_users,
             "admin_update_user": self._admin_update_user,
+            "get_ai_consent_attributes": self._get_ai_consent_attributes,
+            "get_user_agreement_attributes": self._get_user_agreement_attributes,
         })
+    
+    def _get_authenticated_user_id(self, payload: Dict) -> tuple:
+        """
+        Extract user_id from authentication context.
+        
+        Args:
+            payload: Processor method payload
+            
+        Returns:
+            Tuple of (user_id, error_response). If authenticated, returns (user_id, None).
+            If not authenticated, returns (None, error_response).
+        """
+        auth_context = AuthContext.from_payload(payload)
+        if not auth_context.is_authenticated():
+            error_response = ResponseFormatter.format_error(
+                "Authentication required", 
+                ResponseFormatter.ERROR_CODES["UNAUTHORIZED"]
+            )
+            return None, error_response
+        return auth_context.user_id, None
 
     def _register_user(self, payload: Dict) -> Dict:
         """
@@ -74,18 +96,19 @@ class UserProcessor(BaseProcessor):
 
     def _get_user_profile(self, payload: Dict) -> Dict:
         """
-        Get user profile by ID.
-        
-        Required payload keys:
-        - user_id: ID of user to fetch
+        Get authenticated user's profile.
+        No payload keys required - uses authentication context.
         """
         try:
-            require_keys(payload, ["user_id"])
-            user_profile = self.helper.get_user_profile(payload["user_id"])
+            user_id, error = self._get_authenticated_user_id(payload)
+            if error:
+                return error
+            
+            user_profile = self.helper.get_user_profile(user_id)
             
             if not user_profile:
                 return ResponseFormatter.format_error(
-                    f"User not found with ID: {payload['user_id']}", 
+                    f"User not found with ID: {user_id}", 
                     ResponseFormatter.ERROR_CODES["NOT_FOUND"]
                 )
             
@@ -98,10 +121,9 @@ class UserProcessor(BaseProcessor):
 
     def _update_user_profile(self, payload: Dict) -> Dict:
         """
-        Update user profile with validation.
+        Update authenticated user's profile.
         
         Required payload keys:
-        - user_id: ID of user to update
         - updates: Dictionary of fields to update
         
         Possible updates:
@@ -111,10 +133,19 @@ class UserProcessor(BaseProcessor):
         - metadata: Update metadata (with role-specific validation)
         """
         try:
-            require_keys(payload, ["user_id", "updates"])
+            # Support both authenticated self-update and internal calls with user_id
+            if "user_id" in payload:
+                # Internal call from other methods
+                user_id = payload["user_id"]
+                auth_context = AuthContext.from_payload(payload)
+            else:
+                # Direct API call - use authenticated user
+                user_id, error = self._get_authenticated_user_id(payload)
+                if error:
+                    return error
+                auth_context = AuthContext.from_payload(payload)
             
-            # Get authenticated user from context
-            auth_context = AuthContext.from_payload(payload)
+            require_keys(payload, ["updates"])
             
             # Ensure we're not trying to update immutable fields
             updates = payload["updates"]
@@ -133,7 +164,7 @@ class UserProcessor(BaseProcessor):
                     
                 updates["metadata"]["last_modified_by"] = auth_context.user_id
             
-            updated_user = self.helper.update_user_profile(payload["user_id"], updates)
+            updated_user = self.helper.update_user_profile(user_id, updates)
             
             # Handle error response from helper
             if "error" in updated_user:
@@ -143,7 +174,7 @@ class UserProcessor(BaseProcessor):
             # Format successful update response
             return ResponseFormatter.format_update_response(
                 resource_type="user",
-                resource_id=payload["user_id"],
+                resource_id=user_id,
                 updated_resource=updated_user
             )
         except UserValidationError as e:
@@ -242,11 +273,8 @@ class UserProcessor(BaseProcessor):
 
     def _update_ai_consents(self, payload: Dict) -> Dict:
         """
-        Update AI consent attributes from the consent selection UI page.
+        Update authenticated user's AI consent attributes.
         Automatically sets current UTC timestamp for corresponding date fields.
-        
-        Required payload keys:
-        - user_id: ID of user to update
         
         Optional payload keys (at least one required):
         - ai_training_consent: Boolean consent for AI training
@@ -254,9 +282,9 @@ class UserProcessor(BaseProcessor):
         - ai_marketplace_consent: Boolean consent for AI marketplace
         """
         try:
-            require_keys(payload, ["user_id"])
-            
-            user_id = payload["user_id"]
+            user_id, error = self._get_authenticated_user_id(payload)
+            if error:
+                return error
             
             # Build updates dictionary with automatic timestamp handling
             updates = {}
@@ -285,41 +313,38 @@ class UserProcessor(BaseProcessor):
                     ResponseFormatter.ERROR_CODES["VALIDATION_ERROR"]
                 )
             
-            # Log the consent update
-            auth_context = AuthContext.from_payload(payload)
             logger.info(f"User {user_id} updating AI consents: {list(updates.keys())}")
             
             # Call the existing update_user_profile method internally
             update_payload = {
                 "user_id": user_id,
-                "updates": updates
+                "updates": updates,
+                "auth_context": payload.get("auth_context")
             }
-            
-            # Preserve auth context for the internal call
-            if auth_context.is_authenticated():
-                update_payload["auth_context"] = payload.get("auth_context")
             
             return self._update_user_profile(update_payload)
             
         except Exception as e:
-            logger.error(f"Error updating AI consents for user {payload.get('user_id')}: {str(e)}")
+            logger.error(f"Error updating AI consents: {str(e)}")
             return ResponseFormatter.format_error(f"Failed to update AI consents: {str(e)}", 
                                                ResponseFormatter.ERROR_CODES["INTERNAL_ERROR"])
 
     def _update_user_agreement(self, payload: Dict) -> Dict:
         """
-        Update AI user agreement consent from the agreement signing UI page.
+        Update authenticated user's AI user agreement consent.
         Automatically sets current UTC timestamp for the consent date.
         
         Required payload keys:
-        - user_id: ID of user to update
         - ai_user_agreement_consent: Boolean consent for user agreement
         - ai_user_agreement_version: Version of the agreement being signed
         """
         try:
-            require_keys(payload, ["user_id", "ai_user_agreement_consent", "ai_user_agreement_version"])
+            user_id, error = self._get_authenticated_user_id(payload)
+            if error:
+                return error
+                
+            require_keys(payload, ["ai_user_agreement_consent", "ai_user_agreement_version"])
             
-            user_id = payload["user_id"]
             consent = payload["ai_user_agreement_consent"]
             version = payload["ai_user_agreement_version"]
             
@@ -331,23 +356,72 @@ class UserProcessor(BaseProcessor):
                 "ai_user_agreement_version": version
             }
             
-            # Log the agreement update
-            auth_context = AuthContext.from_payload(payload)
             logger.info(f"User {user_id} signing user agreement version {version} with consent: {consent}")
             
             # Call the existing update_user_profile method internally
             update_payload = {
                 "user_id": user_id,
-                "updates": updates
+                "updates": updates,
+                "auth_context": payload.get("auth_context")
             }
-            
-            # Preserve auth context for the internal call
-            if auth_context.is_authenticated():
-                update_payload["auth_context"] = payload.get("auth_context")
             
             return self._update_user_profile(update_payload)
             
         except Exception as e:
-            logger.error(f"Error updating user agreement for user {payload.get('user_id')}: {str(e)}")
+            logger.error(f"Error updating user agreement: {str(e)}")
             return ResponseFormatter.format_error(f"Failed to update user agreement: {str(e)}", 
+                                               ResponseFormatter.ERROR_CODES["INTERNAL_ERROR"])
+
+    def _get_ai_consent_attributes(self, payload: Dict) -> Dict:
+        """
+        Get authenticated user's AI consent attributes (training, reference, marketplace).
+        No payload keys required - uses authentication context.
+        """
+        try:
+            user_id, error = self._get_authenticated_user_id(payload)
+            if error:
+                return error
+            
+            logger.info(f"Fetching AI consent attributes for user_id: {user_id}")
+            
+            consent_attributes = self.helper.get_ai_consent_attributes(user_id)
+            
+            # Handle error response from helper
+            if "error" in consent_attributes:
+                message, code = ResponseFormatter.extract_error_info(consent_attributes)
+                return ResponseFormatter.format_error(message, ResponseFormatter.ERROR_CODES["NOT_FOUND"])
+            
+            # Format successful response with consent data
+            return ResponseFormatter.format_success(consent_attributes)
+            
+        except Exception as e:
+            logger.error(f"Error fetching AI consent attributes: {str(e)}")
+            return ResponseFormatter.format_error(f"Failed to fetch AI consent attributes: {str(e)}", 
+                                               ResponseFormatter.ERROR_CODES["INTERNAL_ERROR"])
+
+    def _get_user_agreement_attributes(self, payload: Dict) -> Dict:
+        """
+        Get authenticated user's agreement consent attributes.
+        No payload keys required - uses authentication context.
+        """
+        try:
+            user_id, error = self._get_authenticated_user_id(payload)
+            if error:
+                return error
+            
+            logger.info(f"Fetching user agreement attributes for user_id: {user_id}")
+            
+            agreement_attributes = self.helper.get_user_agreement_attributes(user_id)
+            
+            # Handle error response from helper
+            if "error" in agreement_attributes:
+                message, code = ResponseFormatter.extract_error_info(agreement_attributes)
+                return ResponseFormatter.format_error(message, ResponseFormatter.ERROR_CODES["NOT_FOUND"])
+            
+            # Format successful response with agreement data
+            return ResponseFormatter.format_success(agreement_attributes)
+            
+        except Exception as e:
+            logger.error(f"Error fetching user agreement attributes: {str(e)}")
+            return ResponseFormatter.format_error(f"Failed to fetch user agreement attributes: {str(e)}", 
                                                ResponseFormatter.ERROR_CODES["INTERNAL_ERROR"])

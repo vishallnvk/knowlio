@@ -349,3 +349,60 @@ class UserHelper:
             Result with encoded pagination_token and proper pagination structure
         """
         return PaginationHelper.encode_pagination_result(result)
+    
+    @Retry(max_attempts=DEFAULT_RETRY_MAX_ATTEMPTS, initial_wait=DEFAULT_RETRY_INITIAL_WAIT, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
+    def get_ai_consent_attributes(self, user_id: str) -> Dict:
+        """
+        Get all AI consent attributes (training, reference, marketplace) for a user.
+        
+        Args:
+            user_id: ID of the user to fetch consent attributes for
+            
+        Returns:
+            Dict with AI consent attributes only
+        """
+        logger.info("Fetching AI consent attributes for user_id: %s", user_id)
+        
+        # Get the full user profile
+        user = self.get_user_profile(user_id)
+        if not user:
+            return {"error": f"User not found with ID: {user_id}"}
+        
+        # Extract only AI consent attributes
+        consent_attributes = {
+            "ai_training_consent": user.get("ai_training_consent", False),
+            "ai_training_consent_date": user.get("ai_training_consent_date"),
+            "ai_reference_consent": user.get("ai_reference_consent", False),
+            "ai_reference_consent_date": user.get("ai_reference_consent_date"),
+            "ai_marketplace_consent": user.get("ai_marketplace_consent", False),
+            "ai_marketplace_consent_date": user.get("ai_marketplace_consent_date")
+        }
+        
+        return consent_attributes
+    
+    @Retry(max_attempts=DEFAULT_RETRY_MAX_ATTEMPTS, initial_wait=DEFAULT_RETRY_INITIAL_WAIT, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
+    def get_user_agreement_attributes(self, user_id: str) -> Dict:
+        """
+        Get user agreement consent attributes only.
+        
+        Args:
+            user_id: ID of the user to fetch agreement attributes for
+            
+        Returns:
+            Dict with user agreement attributes only
+        """
+        logger.info("Fetching user agreement attributes for user_id: %s", user_id)
+        
+        # Get the full user profile
+        user = self.get_user_profile(user_id)
+        if not user:
+            return {"error": f"User not found with ID: {user_id}"}
+        
+        # Extract only user agreement attributes
+        agreement_attributes = {
+            "ai_user_agreement_consent": user.get("ai_user_agreement_consent", False),
+            "ai_user_agreement_consent_date": user.get("ai_user_agreement_consent_date"),
+            "ai_user_agreement_version": user.get("ai_user_agreement_version")
+        }
+        
+        return agreement_attributes
