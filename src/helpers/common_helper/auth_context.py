@@ -14,7 +14,8 @@ class AuthContext:
     This class encapsulates user identity information and role details from authentication.
     """
     
-    def __init__(self, user_id=None, email=None, role=None, groups=None, claims=None):
+    def __init__(self, user_id=None, email=None, role=None, groups=None, claims=None, 
+                 first_name=None, last_name=None, name=None):
         """
         Initialize authentication context with user details.
         
@@ -24,12 +25,18 @@ class AuthContext:
             role: User's primary role in the system
             groups: List of groups/roles the user belongs to
             claims: Raw claims from the JWT token (for advanced use cases)
+            first_name: User's first name
+            last_name: User's last name
+            name: User's full display name
         """
         self.user_id = user_id
         self.email = email
         self.role = role
         self.groups = groups or []
         self.claims = claims or {}
+        self.first_name = first_name
+        self.last_name = last_name
+        self.name = name
         self.authenticated = bool(user_id)
     
     @classmethod
@@ -89,7 +96,10 @@ class AuthContext:
             email=user_data.get('email'),
             role=user_data.get('role') or (user_data.get('groups', [None])[0]),
             groups=user_data.get('groups', []),
-            claims=user_data.get('claims', {})
+            claims=user_data.get('claims', {}),
+            first_name=user_data.get('first_name'),
+            last_name=user_data.get('last_name'),
+            name=user_data.get('name')
         )
     
     @classmethod

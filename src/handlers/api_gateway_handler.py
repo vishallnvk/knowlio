@@ -24,7 +24,7 @@ from typing import Any, Dict, Optional, Tuple
 from exceptions.processor_exceptions.exceptions import ProcessorNotFoundError, InvalidInputError, \
     ProcessorExecutionError
 from helpers.common_helper.logger_helper import LoggerHelper
-from helpers.common_helper.cognito_helper import get_user_details_from_event, validate_user_access
+from helpers.common_helper.cognito_helper import get_user_details_from_event, validate_user_access, ensure_user_has_groups
 from helpers.common_helper.auth_context import AuthContext
 from config.api_routes import KnowlioApiRoutes, ApiRoute
 from sync_processor_registry.bootstrap import load_all_processors
@@ -91,6 +91,7 @@ def _handle_api_gateway_event(event: Dict[str, Any], context: Any) -> Dict[str, 
     auth_context = AuthContext.from_event(event)
     
     # *** AUTHORIZATION INTERCEPTOR ***
+    # Groups are now included in JWT token via pre-token generation trigger
     # Check if route requires authentication
     if getattr(route, 'auth_required', False):
         # Validate access based on required groups
@@ -113,7 +114,7 @@ def _handle_api_gateway_event(event: Dict[str, Any], context: Any) -> Dict[str, 
         
         # If not authorized, return error response
         if not is_authorized:
-            logger.warning(f"Access denied for route: {http_method} {path}")
+            logger.warning(f"Access denied for route: {http_method} {path} - User groups: {auth_context.groups}")
             return _http_response(403, {"error": "Forbidden", "message": message})
             
         logger.info(f"User {auth_context.email} authorized for {path}")

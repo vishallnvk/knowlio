@@ -9,7 +9,17 @@ class UserModel:
         self.user_id: str = str(uuid.uuid4())
         self.email: str = user_data["email"]
         self.role: str = user_data["role"]
-        self.name: str = user_data.get("name", "")
+        
+        # Name fields - support both individual names and combined name
+        self.first_name: str = user_data.get("first_name", "")
+        self.last_name: str = user_data.get("last_name", "")
+        
+        # Compute full name from first and last names, or fallback to provided name
+        if self.first_name or self.last_name:
+            self.name: str = f"{self.first_name} {self.last_name}".strip()
+        else:
+            self.name: str = user_data.get("name", "")
+            
         self.organization: str = user_data.get("organization", "")
         self.auth_provider: str = user_data.get("auth_provider", "COGNITO")
         self.created_at: str = datetime.utcnow().isoformat()

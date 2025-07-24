@@ -4,6 +4,7 @@ import os
 from constructs import Construct
 from aws_cdk import (
     aws_cognito as cognito,
+    aws_lambda as lambda_,
     RemovalPolicy,
     Stack,
     SecretValue
@@ -15,12 +16,21 @@ class CognitoAuthConstruct(Construct):
     """Construct for creating Cognito authentication resources"""
     
     def __init__(self, scope: Construct, id: str, resource_prefix: str = "", 
-                 google_client_id: str = None, google_client_secret: str = None):
+                 google_client_id: str = None, google_client_secret: str = None,
+                 post_auth_trigger_lambda: lambda_.Function = None,
+                 pre_token_generation_trigger_lambda: lambda_.Function = None):
         super().__init__(scope, id)
         
         self.resource_prefix = resource_prefix
         
-        # Create Cognito User Pool
+        # Create Cognito User Pool with optional triggers
+        lambda_triggers = None
+        if post_auth_trigger_lambda or pre_token_generation_trigger_lambda:
+            lambda_triggers = cognito.UserPoolTriggers(
+                post_authentication=post_auth_trigger_lambda,
+                pre_token_generation=pre_token_generation_trigger_lambda
+            )
+
         self.user_pool = cognito.UserPool(
             self, "UserPool",
             user_pool_name=f"{resource_prefix}{AuthConfig.USER_POOL['pool_name']}",
@@ -47,6 +57,7 @@ class CognitoAuthConstruct(Construct):
                 require_symbols=AuthConfig.USER_POOL["password_policy"]["require_symbols"]
             ),
             account_recovery=cognito.AccountRecovery.EMAIL_ONLY,
+            lambda_triggers=lambda_triggers,
             removal_policy=RemovalPolicy.DESTROY  # For development - change for production
         )
         

@@ -22,3 +22,19 @@ VALID_ROLES = ["ADMIN", "PUBLISHER", "CONSUMER"]
 
 # Pagination defaults
 DEFAULT_PAGINATION_LIMIT = 50
+
+# Auto-registration configuration
+AUTO_REGISTRATION_ENABLED = True
+DEFAULT_AUTO_REGISTRATION_ROLE = "PUBLISHER"
+DEFAULT_AUTO_REGISTRATION_GROUP = "Publisher"
+AUTO_REGISTRATION_AUTH_PROVIDER = "Google"
+
+# Cognito group management
+COGNITO_GROUP_ROLE_MAPPING = {
+    "Admin": "ADMIN",
+    "Publisher": "PUBLISHER", 
+    "Consumer": "CONSUMER"
+}
+
+# Logging configuration for auth flow
+AUTH_FLOW_LOGGING_ENABLED = True

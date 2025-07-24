@@ -29,6 +29,7 @@ class UserProcessor(BaseProcessor):
             "admin_update_user": self._admin_update_user,
             "get_ai_consent_attributes": self._get_ai_consent_attributes,
             "get_user_agreement_attributes": self._get_user_agreement_attributes,
+            "auto_register_user": self._auto_register_user,
         })
     
     def _get_authenticated_user_id(self, payload: Dict) -> tuple:
@@ -436,4 +437,96 @@ class UserProcessor(BaseProcessor):
         except Exception as e:
             logger.error(f"Error fetching user agreement attributes: {str(e)}")
             return ResponseFormatter.format_error(f"Failed to fetch user agreement attributes: {str(e)}", 
+                                               ResponseFormatter.ERROR_CODES["INTERNAL_ERROR"])
+
+    def _auto_register_user(self, payload: Dict) -> Dict:
+        """
+        Auto-register a new user with default Publisher role.
+        This method is called internally when a Google OAuth user logs in for the first time.
+        
+        Required payload keys:
+        - user_id: Cognito user ID (sub claim)
+        - email: User email address
+        
+        Optional payload keys:
+        - first_name: User's first name from Cognito
+        - last_name: User's last name from Cognito
+        - name: User's full name from Cognito
+        - auth_provider: Authentication provider (defaults to Google)
+        """
+        try:
+            from config.user_config import (
+                AUTO_REGISTRATION_ENABLED, 
+                DEFAULT_AUTO_REGISTRATION_ROLE,
+                AUTO_REGISTRATION_AUTH_PROVIDER
+            )
+            
+            if not AUTO_REGISTRATION_ENABLED:
+                return ResponseFormatter.format_error(
+                    "Auto-registration is disabled", 
+                    ResponseFormatter.ERROR_CODES["FORBIDDEN"]
+                )
+            
+            require_keys(payload, ["user_id", "email"])
+            
+            user_id = payload["user_id"]
+            email = payload["email"]
+            
+            # Check if user already exists
+            existing_user = self.helper.get_user_profile(user_id)
+            if existing_user:
+                logger.info(f"User {email} already exists in database, skipping auto-registration")
+                return ResponseFormatter.format_success(existing_user)
+            
+            # Build auto-registration payload
+            auto_reg_payload = {
+                "user_id": user_id,
+                "email": email,
+                "role": DEFAULT_AUTO_REGISTRATION_ROLE,
+                "auth_provider": payload.get("auth_provider", AUTO_REGISTRATION_AUTH_PROVIDER),
+                "metadata": {
+                    "auto_registered": True,
+                    "auto_registration_date": datetime.utcnow().isoformat() + "Z",
+                    "registration_source": "Google OAuth"
+                }
+            }
+            
+            # Add name information if available
+            if payload.get("first_name"):
+                auto_reg_payload["first_name"] = payload["first_name"]
+            if payload.get("last_name"):
+                auto_reg_payload["last_name"] = payload["last_name"]
+            if payload.get("name"):
+                auto_reg_payload["name"] = payload["name"]
+            elif payload.get("first_name") or payload.get("last_name"):
+                # Construct name from first/last names
+                first_name = payload.get("first_name", "")
+                last_name = payload.get("last_name", "")
+                auto_reg_payload["name"] = f"{first_name} {last_name}".strip()
+            
+            logger.info(f"Auto-registering user {email} with role {DEFAULT_AUTO_REGISTRATION_ROLE}")
+            
+            # Call the existing register_user method
+            result = self.helper.register_user(auto_reg_payload)
+            
+            # Handle error response from helper
+            if "error" in result:
+                message, code = ResponseFormatter.extract_error_info(result)
+                return ResponseFormatter.format_error(message, ResponseFormatter.ERROR_CODES["INTERNAL_ERROR"])
+            
+            logger.info(f"Successfully auto-registered user {email} with ID {user_id}")
+            
+            # Format successful create response
+            return ResponseFormatter.format_create_response(
+                resource_type="user",
+                resource_id=result.get("user_id"),
+                resource_data=result
+            )
+            
+        except UserValidationError as e:
+            logger.warning(f"User auto-registration validation error: {str(e)}")
+            return ResponseFormatter.format_error(str(e), ResponseFormatter.ERROR_CODES["VALIDATION_ERROR"])
+        except Exception as e:
+            logger.error(f"Error auto-registering user: {str(e)}")
+            return ResponseFormatter.format_error(f"Failed to auto-register user: {str(e)}", 
                                                ResponseFormatter.ERROR_CODES["INTERNAL_ERROR"])
