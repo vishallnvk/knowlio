@@ -614,6 +614,13 @@ class ContentProcessor(BaseProcessor):
             if keywords:
                 enriched_payload["keywords"] = keywords
             
+            # Extract image URLs from imageLinks
+            image_links = google_book_data.get("imageLinks", {})
+            if image_links.get("thumbnail"):
+                enriched_payload["thumbnail_url"] = image_links["thumbnail"]
+            if image_links.get("smallThumbnail"):
+                enriched_payload["small_thumbnail_url"] = image_links["smallThumbnail"]
+            
             # Ensure ISBN is preserved
             enriched_payload["isbn"] = isbn
             

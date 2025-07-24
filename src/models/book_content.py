@@ -24,6 +24,10 @@ class BookContent(ContentModel):
         self.training_status: str = content_data.get("training_status", DEFAULT_WORKFLOW_STATUS)
         self.licensing_status: str = content_data.get("licensing_status", DEFAULT_WORKFLOW_STATUS)
         
+        # Image URLs from Google Books API
+        self.thumbnail_url: str = content_data.get("thumbnail_url", "")
+        self.small_thumbnail_url: str = content_data.get("small_thumbnail_url", "")
+        
         # Validate status values
         self._validate_statuses()
     
@@ -54,5 +58,7 @@ class BookContent(ContentModel):
             "keywords": self.keywords,
             "rag_status": self.rag_status,
             "training_status": self.training_status,
-            "licensing_status": self.licensing_status
+            "licensing_status": self.licensing_status,
+            "thumbnail_url": self.thumbnail_url,
+            "small_thumbnail_url": self.small_thumbnail_url
         }
