@@ -159,6 +159,28 @@ class ContentProcessor(BaseProcessor):
                 # Add publisher_id from authenticated user
                 payload["publisher_id"] = auth_context.user_id
                 logger.info(f"User {auth_context.user_id} ({auth_context.role}) creating {payload['type']} content")
+                
+                # Fetch user's AI consent preferences as defaults for content status fields
+                user_processor = ProcessorRegistry.get("user")
+                if user_processor:
+                    consent_payload = {"auth_context": payload.get("auth_context")}
+                    consent_result = user_processor._get_ai_consent_attributes(consent_payload)
+                    
+                    if consent_result.get("success") and consent_result.get("data"):
+                        consent_data = consent_result["data"]
+                        
+                        # Map user consent preferences to content status fields
+                        # Only set defaults if not explicitly provided in payload
+                        if "training_status" not in payload:
+                            payload["training_status"] = "ENABLED" if consent_data.get("ai_training_consent", False) else "DISABLED"
+                        
+                        if "rag_status" not in payload:
+                            payload["rag_status"] = "ENABLED" if consent_data.get("ai_reference_consent", False) else "DISABLED"
+                        
+                        if "licensing_status" not in payload:
+                            payload["licensing_status"] = "ENABLED" if consent_data.get("ai_marketplace_consent", False) else "DISABLED"
+                        
+                        logger.info(f"Applied user's AI consent preferences as defaults for content status fields")
             
             # Create the appropriate content model using the factory
             try:
