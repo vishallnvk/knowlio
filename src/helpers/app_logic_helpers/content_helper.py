@@ -174,7 +174,7 @@ class ContentHelper:
         
     @Retry(max_attempts=DEFAULT_RETRY_MAX_ATTEMPTS, initial_wait=DEFAULT_RETRY_INITIAL_WAIT, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
     def search_content(self, search_params: Dict, limit: int = None, 
-                      pagination_token: str = None) -> Dict:
+                      pagination_token: str = None, count_only: bool = False) -> Dict:
         """
         Search content based on provided parameters with pagination support.
         Supports generic content fields and specific fields for different content types.
@@ -186,9 +186,10 @@ class ContentHelper:
                 - Status fields (rag_status, training_status, licensing_status)
             limit: Optional maximum number of items to return
             pagination_token: Optional pagination token from previous query
+            count_only: If True, return only count information without full items
                 
         Returns:
-            Dict containing matching content items and pagination details
+            Dict containing matching content items and pagination details, or just count if count_only=True
         """
         logger.info("Searching content with parameters: %s (limit: %s)", search_params, limit)
         
@@ -203,9 +204,19 @@ class ContentHelper:
         
         # Apply filters based on provided search parameters
         filtered_items = []
+        gsi_filtered_field = base_result.get("gsi_filtered_field")
+        
         for item in base_result.get("items", []):
-            if self._matches_search_criteria(item, search_params):
+            if self._matches_search_criteria(item, search_params, gsi_filtered_field):
                 filtered_items.append(item)
+        
+        # If count_only is True, return just the count information
+        if count_only:
+            logger.info("Count-only search returned %d results", len(filtered_items))
+            return {
+                "count": len(filtered_items),
+                "total_scanned": base_result.get("total_scanned", len(base_result.get("items", [])))
+            }
         
         # Use the common pagination helper to apply search filters and format results
         result = PaginationHelper.apply_search_filters(base_result, filtered_items, search_params)
@@ -243,8 +254,8 @@ class ContentHelper:
                         limit=limit,
                         last_evaluated_key=last_evaluated_key
                     )
-                    # Remove the field from search_params to avoid double filtering
-                    del search_params[field]
+                    # Mark this field as already filtered by the GSI query
+                    result["gsi_filtered_field"] = field
                     
                     # Include the limit in the result for pagination calculation
                     if limit is not None:
@@ -267,18 +278,23 @@ class ContentHelper:
             
         return result
     
-    def _matches_search_criteria(self, item: Dict, search_params: Dict) -> bool:
+    def _matches_search_criteria(self, item: Dict, search_params: Dict, gsi_filtered_field: str = None) -> bool:
         """
         Check if an item matches all search criteria.
         
         Args:
             item: Content item to check
             search_params: Search parameters to match against
+            gsi_filtered_field: Field that was already filtered by GSI query (should be skipped)
             
         Returns:
             True if the item matches all criteria, False otherwise
         """
         for key, value in search_params.items():
+            # Skip the field that was already filtered by GSI query
+            if key == gsi_filtered_field:
+                continue
+                
             # Handle standard fields
             if key in item:
                 if not self._values_match(item[key], value):

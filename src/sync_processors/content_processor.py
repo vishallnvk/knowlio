@@ -32,6 +32,7 @@ class ContentProcessor(BaseProcessor):
             "update_content_attribute": self._update_content_attribute,
             "archive_content": self._archive_content,
             "search_content": self._search_content,
+            "get_content_count": self._get_content_count,
         })
         
     def _validate_workflow_status_fields(self, params_dict: Dict) -> Dict:
@@ -638,3 +639,84 @@ class ContentProcessor(BaseProcessor):
         except Exception as e:
             logger.error(f"Error enriching book data for ISBN {isbn}: {str(e)}")
             return {"error": f"Failed to enrich book data: {str(e)}"}
+
+    def _get_content_count(self, payload: Dict) -> Dict:
+        """
+        Get content count for authenticated user by reusing existing search logic with count_only=True.
+        Supports all content types (BOOK, AUDIO, VIDEO, etc.) and all search filters.
+        
+        Optional payload keys:
+        - type: Content type (BOOK, AUDIO, etc.)
+        - status: Content status (ACTIVE, ARCHIVED, etc.)
+        - rag_status: RAG workflow status (ENABLED, DISABLED)
+        - training_status: Training workflow status (ENABLED, DISABLED)
+        - licensing_status: Licensing workflow status (ENABLED, DISABLED)
+        - publisher_id: Publisher ID (for filtering by publisher)
+        - Any other search parameters supported by search_content
+        
+        Returns:
+            Dict with count information and total_scanned metadata
+        """
+        try:
+            # Use the same search parameter processing as search_content
+            search_params = payload.copy()
+            
+            # Remove pagination and API processing parameters
+            search_params.pop("limit", None)
+            search_params.pop("pagination_token", None)
+            search_params.pop("__action__", None)
+            # Remove API processing artifacts that shouldn't be used for content searching
+            search_params.pop("_headers", None)
+            search_params.pop("auth_context", None)
+            search_params.pop("userData", None)
+            
+            # Handle legacy attributes format
+            if "attributes" in payload:
+                attributes = payload.get("attributes")
+                if not isinstance(attributes, dict):
+                    return ResponseFormatter.format_error(
+                        "The 'attributes' field must be a dictionary of attribute-value pairs",
+                        ResponseFormatter.ERROR_CODES["VALIDATION_ERROR"],
+                        field="attributes"
+                    )
+                search_params = attributes.copy()
+            
+            # Validate status parameter if provided
+            error = self._validate_content_status(search_params)
+            if error:
+                message, code = ResponseFormatter.extract_error_info(error)
+                return ResponseFormatter.format_error(message, ResponseFormatter.ERROR_CODES["VALIDATION_ERROR"])
+                
+            # Validate workflow status parameters if provided
+            error = self._validate_workflow_status_fields(search_params)
+            if error:
+                message, code = ResponseFormatter.extract_error_info(error)
+                return ResponseFormatter.format_error(message, ResponseFormatter.ERROR_CODES["VALIDATION_ERROR"])
+                    
+            # Validate type parameter if provided
+            error = self._validate_content_type(search_params)
+            if error:
+                message, code = ResponseFormatter.extract_error_info(error)
+                return ResponseFormatter.format_error(message, ResponseFormatter.ERROR_CODES["VALIDATION_ERROR"])
+            
+            # Execute search with count_only=True
+            count_result = self.helper.search_content(
+                search_params=search_params,
+                count_only=True
+            )
+            
+            # Handle error case
+            if "error" in count_result:
+                message, code = ResponseFormatter.extract_error_info(count_result)
+                return ResponseFormatter.format_error(message, code)
+            
+            # Format successful count response
+            return ResponseFormatter.format_success({
+                "count": count_result.get("count", 0),
+                "total_scanned": count_result.get("total_scanned", 0)
+            })
+            
+        except Exception as e:
+            logger.error(f"Error getting content count: {str(e)}")
+            return ResponseFormatter.format_error(f"Failed to get content count: {str(e)}", 
+                                               ResponseFormatter.ERROR_CODES["INTERNAL_ERROR"])

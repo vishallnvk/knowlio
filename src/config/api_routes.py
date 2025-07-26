@@ -159,7 +159,7 @@ class KnowlioApiRoutes:
                 allowed_groups=["Admin", "Publisher"]
             ),
             ApiRoute(
-                method="PATCH",
+                method="PUT",
                 path="content/attribute/{content_id}/{attribute}",
                 processor_name="content",
                 action="update_content_attribute",
@@ -175,6 +175,15 @@ class KnowlioApiRoutes:
                 processor_name="content",
                 action="search_content",
                 description="Search content with flexible parameters and pagination (supports all query formats)",
+                auth_required=True,
+                allowed_groups=["Admin", "Publisher", "Consumer"]
+            ),
+            ApiRoute(
+                method="POST",
+                path="content/count",
+                processor_name="content",
+                action="get_content_count",
+                description="Get content count using existing search logic with optional filtering",
                 auth_required=True,
                 allowed_groups=["Admin", "Publisher", "Consumer"]
             ),
