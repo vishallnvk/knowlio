@@ -6,6 +6,7 @@ from helpers.common_helper.auth_helper import require_role, get_authenticated_us
 from helpers.common_helper.auth_context import AuthContext
 from helpers.common_helper.common_helper import Retry
 from helpers.common_helper.response_formatter import ResponseFormatter
+from helpers.common_helper.user_isolation_helper import UserIsolationHelper
 from sync_processor_registry.processor_registry import ProcessorRegistry
 from sync_processors.base_processor import BaseProcessor
 
@@ -65,6 +66,7 @@ class AnalyticsProcessor(BaseProcessor):
         """
         Get usage report for a specific content item
         Requires ADMIN or PUBLISHER role
+        Publishers can only access reports for content they own
         """
         logger.info("Processing get_usage_report_by_content request")
         try:
@@ -75,6 +77,30 @@ class AnalyticsProcessor(BaseProcessor):
                     ResponseFormatter.ERROR_CODES["VALIDATION_ERROR"],
                     field="content_id"
                 )
+            
+            # Get authenticated user context
+            auth_context = AuthContext.from_payload(payload)
+            
+            # For publishers, validate they own the content before showing analytics
+            if auth_context.is_authenticated() and auth_context.role == "PUBLISHER":
+                # First, get the content details to check ownership
+                from helpers.app_logic_helpers.content_helper import ContentHelper
+                content_helper = ContentHelper()
+                content_data = content_helper.get_content(content_id)
+                
+                if not content_data or "error" in content_data:
+                    return ResponseFormatter.format_error(
+                        f"Content not found with ID: {content_id}",
+                        ResponseFormatter.ERROR_CODES["NOT_FOUND"]
+                    )
+                
+                # Validate content ownership using UserIsolationHelper
+                ownership_error = UserIsolationHelper.validate_ownership(
+                    content_data, auth_context, "content"
+                )
+                if ownership_error:
+                    logger.warning(f"Publisher {auth_context.user_id} attempted to access usage report for content {content_id} they don't own")
+                    return ownership_error
             
             # Log who accessed the report
             user_id = get_authenticated_user_id(payload)

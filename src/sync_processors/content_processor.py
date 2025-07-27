@@ -440,6 +440,9 @@ class ContentProcessor(BaseProcessor):
         All formats support pagination with:
         - limit: Maximum number of items to return
         - pagination_token: Token for retrieving the next page of results
+        
+        USER ISOLATION: Automatically filters content by authenticated user's publisher_id
+        unless the user is an admin with explicit override permissions.
         """
         try:
             # Handle different payload formats based on the action that was called
@@ -492,6 +495,10 @@ class ContentProcessor(BaseProcessor):
                     search_params.pop("_headers", None)
                     search_params.pop("auth_context", None)
                     search_params.pop("userData", None)
+            
+            # APPLY USER ISOLATION: Automatically filter by authenticated user's publisher_id
+            # unless already specified or user is admin with override permissions
+            search_params = self._apply_user_isolation(search_params, payload)
             
             # Validate status parameter if provided
             error = self._validate_content_status(search_params)
@@ -662,10 +669,58 @@ class ContentProcessor(BaseProcessor):
             logger.error(f"Error enriching book data for ISBN {isbn}: {str(e)}")
             return {"error": f"Failed to enrich book data: {str(e)}"}
 
+    def _apply_user_isolation(self, search_params: Dict, payload: Dict) -> Dict:
+        """
+        Apply user isolation by automatically filtering content by authenticated user's publisher_id
+        unless already specified or user is admin with override permissions.
+        
+        Args:
+            search_params: Original search parameters
+            payload: Original payload containing auth context
+            
+        Returns:
+            Updated search parameters with user isolation applied
+        """
+        try:
+            # Get authenticated user context
+            auth_context = AuthContext.from_payload(payload)
+            
+            # If user is not authenticated, don't apply isolation (will be handled by auth middleware)
+            if not auth_context.is_authenticated():
+                logger.warning("User isolation: No authenticated user found, returning original params")
+                return search_params
+            
+            # If publisher_id is already specified in search params, respect the existing value
+            # This allows admin users to search specific publishers if they have explicit publisher_id
+            if "publisher_id" in search_params:
+                logger.info(f"User isolation: publisher_id already specified ({search_params['publisher_id']}), using existing value")
+                return search_params
+            
+            # For admin users, check if they have an explicit bypass flag
+            # This allows admins to see all content when specifically requested
+            if auth_context.role == "ADMIN" and payload.get("bypass_user_isolation", False):
+                logger.info(f"User isolation: Admin user {auth_context.user_id} bypassing user isolation")
+                return search_params
+            
+            # Apply user isolation: automatically filter by authenticated user's publisher_id
+            search_params = search_params.copy()
+            search_params["publisher_id"] = auth_context.user_id
+            
+            logger.info(f"User isolation: Applied publisher_id filter for user {auth_context.user_id} ({auth_context.role})")
+            return search_params
+            
+        except Exception as e:
+            logger.error(f"Error applying user isolation: {str(e)}")
+            # On error, return original params to avoid breaking the system
+            return search_params
+
     def _get_content_count(self, payload: Dict) -> Dict:
         """
         Get content count for authenticated user by reusing existing search logic with count_only=True.
         Supports all content types (BOOK, AUDIO, VIDEO, etc.) and all search filters.
+        
+        USER ISOLATION: Automatically filters content by authenticated user's publisher_id
+        unless the user is an admin with explicit override permissions.
         
         Optional payload keys:
         - type: Content type (BOOK, AUDIO, etc.)
@@ -702,6 +757,10 @@ class ContentProcessor(BaseProcessor):
                         field="attributes"
                     )
                 search_params = attributes.copy()
+            
+            # APPLY USER ISOLATION: Automatically filter by authenticated user's publisher_id
+            # unless already specified or user is admin with override permissions
+            search_params = self._apply_user_isolation(search_params, payload)
             
             # Validate status parameter if provided
             error = self._validate_content_status(search_params)

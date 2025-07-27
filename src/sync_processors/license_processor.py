@@ -5,6 +5,7 @@ from helpers.common_helper.logger_helper import LoggerHelper
 from helpers.common_helper.auth_helper import require_role, get_authenticated_user_id
 from helpers.common_helper.auth_context import AuthContext
 from helpers.common_helper.response_formatter import ResponseFormatter
+from helpers.common_helper.user_isolation_helper import UserIsolationHelper
 from helpers.app_logic_helpers.license_helper import LicenseHelper
 from sync_processor_registry.processor_registry import ProcessorRegistry
 from sync_processors.base_processor import BaseProcessor
@@ -75,14 +76,10 @@ class LicenseProcessor(BaseProcessor):
                 message, code = ResponseFormatter.extract_error_info(license_data)
                 return ResponseFormatter.format_error(message, code)
             
-            # If user is a consumer, verify they can access this license
-            if auth_context.is_authenticated() and auth_context.role == "CONSUMER":
-                if license_data.get("consumer_id") != auth_context.user_id:
-                    logger.warning(f"User {auth_context.user_id} attempted to access license {payload['license_id']} belonging to another consumer")
-                    return ResponseFormatter.format_error(
-                        "You do not have permission to access this license",
-                        ResponseFormatter.ERROR_CODES["FORBIDDEN"]
-                    )
+            # Validate user has permission to access this license
+            ownership_error = UserIsolationHelper.validate_ownership(license_data, auth_context, "license")
+            if ownership_error:
+                return ownership_error
             
             # Format successful response with license data
             return ResponseFormatter.format_success(license_data)
@@ -130,13 +127,8 @@ class LicenseProcessor(BaseProcessor):
             # Get authenticated user from context
             auth_context = AuthContext.from_payload(payload)
             
-            # Apply role-based filtering
-            if auth_context.is_authenticated():
-                # If consumer role, restrict to only their licenses
-                if auth_context.role == "CONSUMER":
-                    # Override any consumer_id in search to ensure they only see their own licenses
-                    search_params["consumer_id"] = auth_context.user_id
-                    logger.info(f"Restricting license search for consumer {auth_context.user_id}")
+            # Apply user isolation using the reusable helper
+            search_params = UserIsolationHelper.apply_user_isolation(search_params, auth_context)
             
             # Execute search with the provided parameters
             search_result = self.helper.search_licenses(
