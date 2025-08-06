@@ -7,6 +7,7 @@ from helpers.aws_service_helpers.dynamodb_helper import DynamoDBHelper
 from helpers.common_helper.logger_helper import LoggerHelper
 from helpers.common_helper.common_helper import Retry
 from helpers.common_helper.pagination_helper import PaginationHelper
+from helpers.common_helper.data_type_utils import DataTypeUtils, ContentDataValidator
 from enums.content_status import ContentStatus, WorkflowStatus
 from config.content_config import CONTENT_TABLE_NAME, DEFAULT_RETRY_MAX_ATTEMPTS, DEFAULT_RETRY_INITIAL_WAIT, WORKFLOW_STATUS_FIELDS
 
@@ -41,7 +42,9 @@ class ContentHelper:
             if "created_at" not in content_data:
                 content_data["created_at"] = datetime.utcnow().isoformat()
             
-            logger.info("Uploading content metadata: %s", content_data)
+            # Use safe logging format to prevent type errors
+            safe_content_data = DataTypeUtils.safe_logging_format(content_data)
+            logger.info("Uploading content metadata: %s", safe_content_data)
             self.db.put_item(content_data)
             
             return {"message": "Content metadata uploaded", "content_id": content_id}
@@ -144,19 +147,37 @@ class ContentHelper:
         Raises:
             ContentValidationError: If validation fails
         """
-        logger.info("Updating attribute '%s' for content_id: %s", attribute, content_id)
-        
-        # For top-level attributes, use update_content_metadata
-        if "." not in attribute:
-            return self.update_content_metadata(content_id, {attribute: value})
+        try:
+            # Safely format the attribute and value for logging
+            safe_attribute = DataTypeUtils.safe_string_conversion(attribute)
+            safe_value = DataTypeUtils.safe_logging_format(value)
             
-        # For nested attributes, we need to get the current content first
-        content = self.get_content_details(content_id)
-        if not content:
-            raise ContentValidationError(f"Content not found with ID: {content_id}")
+            logger.info("Updating attribute '%s' for content_id: %s with value: %s", 
+                       safe_attribute, content_id, safe_value)
             
-        # For now, nested attribute updates are not supported
-        raise ContentValidationError(f"Nested attribute updates are not currently supported: {attribute}")
+            # Validate and normalize the attribute value
+            try:
+                normalized_value = ContentDataValidator.validate_content_attribute_value(safe_attribute, value)
+            except ValueError as e:
+                raise ContentValidationError(f"Invalid value for attribute '{safe_attribute}': {str(e)}")
+            
+            # For top-level attributes, use update_content_metadata
+            if "." not in safe_attribute:
+                return self.update_content_metadata(content_id, {safe_attribute: normalized_value})
+                
+            # For nested attributes, we need to get the current content first
+            content = self.get_content_details(content_id)
+            if not content:
+                raise ContentValidationError(f"Content not found with ID: {content_id}")
+                
+            # For now, nested attribute updates are not supported
+            raise ContentValidationError(f"Nested attribute updates are not currently supported: {safe_attribute}")
+            
+        except ContentValidationError:
+            raise
+        except Exception as e:
+            logger.error("Error updating content attribute: %s", str(e))
+            raise ContentValidationError(f"Failed to update content attribute: {str(e)}")
 
     @Retry(max_attempts=DEFAULT_RETRY_MAX_ATTEMPTS, initial_wait=DEFAULT_RETRY_INITIAL_WAIT, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
     def archive_content(self, content_id: str) -> Dict:
@@ -174,10 +195,13 @@ class ContentHelper:
         
     @Retry(max_attempts=DEFAULT_RETRY_MAX_ATTEMPTS, initial_wait=DEFAULT_RETRY_INITIAL_WAIT, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
     def search_content(self, search_params: Dict, limit: int = None, 
-                      pagination_token: str = None, count_only: bool = False) -> Dict:
+                      pagination_token: str = None, count_only: bool = False, 
+                      user_id: str = None) -> Dict:
         """
         Search content based on provided parameters with pagination support.
         Supports generic content fields and specific fields for different content types.
+        
+        IMPORTANT: This method enforces user isolation - content is always filtered by user_id.
         
         Args:
             search_params: Dictionary of search parameters, which can include:
@@ -187,45 +211,66 @@ class ContentHelper:
             limit: Optional maximum number of items to return
             pagination_token: Optional pagination token from previous query
             count_only: If True, return only count information without full items
+            user_id: User ID to filter content by (required for user isolation)
                 
         Returns:
             Dict containing matching content items and pagination details, or just count if count_only=True
         """
-        logger.info("Searching content with parameters: %s (limit: %s)", search_params, limit)
-        
-        # Make a copy of search params to avoid modifying the original
-        search_params = search_params.copy()
-        
-        # Convert pagination token from string to dict if provided
-        last_evaluated_key = self._decode_pagination_token(pagination_token)
-        
-        # Use the most efficient query method based on parameters
-        base_result = self._get_base_query_result(search_params, limit, last_evaluated_key)
-        
-        # Apply filters based on provided search parameters
-        filtered_items = []
-        gsi_filtered_field = base_result.get("gsi_filtered_field")
-        
-        for item in base_result.get("items", []):
-            if self._matches_search_criteria(item, search_params, gsi_filtered_field):
-                filtered_items.append(item)
-        
-        # If count_only is True, return just the count information
-        if count_only:
-            logger.info("Count-only search returned %d results", len(filtered_items))
-            return {
-                "count": len(filtered_items),
-                "total_scanned": base_result.get("total_scanned", len(base_result.get("items", [])))
-            }
-        
-        # Use the common pagination helper to apply search filters and format results
-        result = PaginationHelper.apply_search_filters(base_result, filtered_items, search_params)
-        
-        # Apply standard pagination encoding
-        final_result = PaginationHelper.encode_pagination_result(result)
-        
-        logger.info("Search returned %d results", len(filtered_items))
-        return final_result
+        try:
+            # CRITICAL: Enforce user isolation - user_id must be provided
+            if not user_id:
+                raise ContentValidationError("User ID is required for content search - user isolation enforced")
+            
+            # Safely format search parameters for logging
+            safe_search_params = DataTypeUtils.safe_logging_format(search_params)
+            logger.info("Searching content with parameters: %s (limit: %s) for user: %s", safe_search_params, limit, user_id)
+            
+            # Validate and normalize search parameters to prevent type errors
+            validated_search_params = ContentDataValidator.validate_search_parameters(search_params)
+            
+            # CRITICAL: Always add publisher_id filter for user isolation
+            # (Content items store user information in publisher_id field)
+            validated_search_params["publisher_id"] = user_id
+            
+            # Convert pagination token from string to dict if provided
+            last_evaluated_key = self._decode_pagination_token(pagination_token)
+            
+            # Use the most efficient query method based on parameters
+            base_result = self._get_base_query_result(validated_search_params, limit, last_evaluated_key)
+            
+            # Apply filters based on provided search parameters
+            filtered_items = []
+            gsi_filtered_field = base_result.get("gsi_filtered_field")
+            
+            for item in base_result.get("items", []):
+                # CRITICAL: Double-check user isolation at the item level
+                if not self._user_owns_content(item, user_id):
+                    logger.warning("Skipping content item not owned by user %s: %s", user_id, item.get("content_id", "unknown"))
+                    continue
+                    
+                if self._matches_search_criteria(item, validated_search_params, gsi_filtered_field):
+                    filtered_items.append(item)
+            
+            # If count_only is True, return just the count information
+            if count_only:
+                logger.info("Count-only search returned %d results for user %s", len(filtered_items), user_id)
+                return {
+                    "count": len(filtered_items),
+                    "total_scanned": base_result.get("total_scanned", len(base_result.get("items", [])))
+                }
+            
+            # Use the common pagination helper to apply search filters and format results
+            result = PaginationHelper.apply_search_filters(base_result, filtered_items, validated_search_params)
+            
+            # Apply standard pagination encoding
+            final_result = PaginationHelper.encode_pagination_result(result)
+            
+            logger.info("Search returned %d results for user %s", len(filtered_items), user_id)
+            return final_result
+            
+        except Exception as e:
+            logger.error("Error in search_content for user %s: %s", user_id, str(e))
+            raise ContentValidationError(f"Search failed: {str(e)}")
 
     def _get_base_query_result(self, search_params: Dict, limit: int = None, 
                               last_evaluated_key: Dict = None) -> Dict:
@@ -314,7 +359,7 @@ class ContentHelper:
     
     def _values_match(self, item_value: Any, search_value: Any) -> bool:
         """
-        Check if a value matches the search criteria.
+        Check if a value matches the search criteria using safe type handling.
         
         Args:
             item_value: Value from the item
@@ -323,25 +368,61 @@ class ContentHelper:
         Returns:
             True if values match, False otherwise
         """
-        # Handle strings with case-insensitive partial matching
-        if isinstance(item_value, str) and isinstance(search_value, str):
-            return search_value.lower() in item_value.lower()
+        try:
+            # Use safe comparison utilities to handle type mismatches
+            if item_value is None or search_value is None:
+                return item_value == search_value
             
-        # Handle lists (e.g., tags, authors, keywords) with any-match semantics
-        elif isinstance(item_value, list):
-            if isinstance(search_value, list):
-                # If search value is also a list, check if any value matches
-                return any(self._values_match(item_value, sv) for sv in search_value)
-            else:
-                # If search value is a scalar, check if it matches any item in the list
-                if isinstance(search_value, str):
-                    return any(search_value.lower() in str(v).lower() for v in item_value)
-                else:
-                    return search_value in item_value
+            # Handle strings with case-insensitive partial matching
+            if isinstance(item_value, str) and isinstance(search_value, str):
+                return search_value.lower() in item_value.lower()
                 
-        # Exact match for other types
-        else:
-            return item_value == search_value
+            # Handle lists (e.g., tags, authors, keywords) with any-match semantics
+            elif isinstance(item_value, list):
+                if isinstance(search_value, list):
+                    # If search value is also a list, check if any value matches
+                    return any(self._values_match(item_value, sv) for sv in search_value)
+                else:
+                    # If search value is a scalar, check if it matches any item in the list
+                    search_str = DataTypeUtils.safe_string_conversion(search_value).lower()
+                    return any(search_str in DataTypeUtils.safe_string_conversion(v).lower() for v in item_value)
+                    
+            # Use safe equality check for other types
+            else:
+                return DataTypeUtils.safe_equality_check(item_value, search_value)
+                
+        except Exception as e:
+            logger.warning("Error in _values_match: %s", str(e))
+            # Fall back to safe equality check
+            return DataTypeUtils.safe_equality_check(item_value, search_value)
+    
+    def _user_owns_content(self, item: Dict, user_id: str) -> bool:
+        """
+        Check if a user owns a content item - critical for user isolation.
+        
+        Args:
+            item: Content item to check
+            user_id: User ID to check ownership for
+            
+        Returns:
+            True if user owns the content, False otherwise
+        """
+        try:
+            # Get the publisher_id from the item (content items store user info in publisher_id field)
+            item_publisher_id = item.get("publisher_id")
+            
+            # If no publisher_id in item, it's not owned by any user (should not happen)
+            if not item_publisher_id:
+                logger.warning("Content item missing publisher_id: %s", item.get("content_id", "unknown"))
+                return False
+            
+            # Check if the publisher_id matches the user_id
+            return DataTypeUtils.safe_equality_check(item_publisher_id, user_id)
+            
+        except Exception as e:
+            logger.error("Error checking content ownership: %s", str(e))
+            # Default to False for security - deny access if there's an error
+            return False
     
     def _decode_pagination_token(self, pagination_token: Optional[str]) -> Optional[Dict]:
         """

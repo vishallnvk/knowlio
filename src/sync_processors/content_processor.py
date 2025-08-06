@@ -7,6 +7,8 @@ from helpers.common_helper.logger_helper import LoggerHelper
 from helpers.common_helper.auth_helper import require_role, get_authenticated_user_id
 from helpers.common_helper.auth_context import AuthContext
 from helpers.common_helper.response_formatter import ResponseFormatter
+from helpers.common_helper.data_type_utils import DataTypeUtils
+from helpers.common_helper.database_operation_wrapper import DatabaseOperationWrapper
 from helpers.app_logic_helpers.content_helper import ContentHelper, ContentValidationError
 from helpers.app_logic_helpers.google_books_helper import GoogleBooksHelper
 from sync_processor_registry.processor_registry import ProcessorRegistry
@@ -24,6 +26,7 @@ class ContentProcessor(BaseProcessor):
     def __init__(self):
         self.helper = ContentHelper()
         self.google_books_helper = GoogleBooksHelper()
+        self.db_wrapper = DatabaseOperationWrapper()
         super().__init__({
             "upload_content_metadata": self._upload_content_metadata,
             "upload_content_blob": self._upload_content_blob,
@@ -161,26 +164,32 @@ class ContentProcessor(BaseProcessor):
                 logger.info(f"User {auth_context.user_id} ({auth_context.role}) creating {payload['type']} content")
                 
                 # Fetch user's AI consent preferences as defaults for content status fields
-                user_processor = ProcessorRegistry.get("user")
-                if user_processor:
-                    consent_payload = {"auth_context": payload.get("auth_context")}
-                    consent_result = user_processor._get_ai_consent_attributes(consent_payload)
-                    
-                    if consent_result.get("success") and consent_result.get("data"):
-                        consent_data = consent_result["data"]
+                user_processor = ProcessorRegistry.get_processor("user")
+                if user_processor is not None:
+                    try:
+                        consent_result = user_processor._get_ai_consent_attributes(payload)
                         
-                        # Map user consent preferences to content status fields
-                        # Only set defaults if not explicitly provided in payload
-                        if "training_status" not in payload:
-                            payload["training_status"] = "ENABLED" if consent_data.get("ai_training_consent", False) else "DISABLED"
-                        
-                        if "rag_status" not in payload:
-                            payload["rag_status"] = "ENABLED" if consent_data.get("ai_reference_consent", False) else "DISABLED"
-                        
-                        if "licensing_status" not in payload:
-                            payload["licensing_status"] = "ENABLED" if consent_data.get("ai_marketplace_consent", False) else "DISABLED"
-                        
-                        logger.info(f"Applied user's AI consent preferences as defaults for content status fields")
+                        if consent_result.get("success") and consent_result.get("data"):
+                            consent_data = consent_result["data"]
+                            
+                            # Map user consent preferences to content status fields
+                            # Only set defaults if not explicitly provided in payload
+                            if "training_status" not in payload:
+                                payload["training_status"] = "ENABLED" if consent_data.get("ai_training_consent", False) else "DISABLED"
+                            
+                            if "rag_status" not in payload:
+                                payload["rag_status"] = "ENABLED" if consent_data.get("ai_reference_consent", False) else "DISABLED"
+                            
+                            if "licensing_status" not in payload:
+                                payload["licensing_status"] = "ENABLED" if consent_data.get("ai_marketplace_consent", False) else "DISABLED"
+                            
+                            logger.info(f"Applied user's AI consent preferences as defaults for content status fields")
+                        else:
+                            logger.warning(f"Failed to retrieve user consent preferences: {consent_result.get('error', 'Unknown error')}")
+                    except Exception as e:
+                        logger.error(f"Error fetching user consent preferences: {str(e)}. Using default consent settings.")
+                else:
+                    logger.warning("User processor not available, using default consent settings for content status fields")
             
             # Create the appropriate content model using the factory
             try:
@@ -336,11 +345,14 @@ class ContentProcessor(BaseProcessor):
         try:
             require_keys(payload, ["content_id", "attribute", "value"])
             
-            attribute = payload["attribute"]
-            value = payload["value"]
+            # Apply type-safe data processing to the entire payload
+            safe_payload = self.db_wrapper.safe_process_payload(payload)
+            
+            attribute = safe_payload["attribute"]
+            value = safe_payload["value"]
             
             # Validate workflow status attributes against enum values
-            if attribute in WorkflowStatus.WORKFLOW_STATUS_FIELDS:
+            if attribute in WORKFLOW_STATUS_FIELDS:
                 # Create a temporary dictionary with the attribute and value
                 temp_dict = {attribute: value}
                 error = self._validate_workflow_status_fields(temp_dict)
@@ -357,8 +369,12 @@ class ContentProcessor(BaseProcessor):
                     message, code = ResponseFormatter.extract_error_info(error)
                     return ResponseFormatter.format_error(message, ResponseFormatter.ERROR_CODES["VALIDATION_ERROR"])
             
+            # Apply type-safe processing to auth_context if present
+            if "auth_context" in safe_payload:
+                safe_payload["auth_context"] = self._process_auth_context_safely(safe_payload["auth_context"])
+            
             result = self.helper.update_content_attribute(
-                content_id=payload["content_id"],
+                content_id=safe_payload["content_id"],
                 attribute=attribute,
                 value=value
             )
@@ -371,7 +387,7 @@ class ContentProcessor(BaseProcessor):
             # Format successful update response
             return ResponseFormatter.format_update_response(
                 resource_type="content",
-                resource_id=payload["content_id"],
+                resource_id=safe_payload["content_id"],
                 updated_resource=result
             )
         except ContentValidationError as e:
@@ -518,11 +534,20 @@ class ContentProcessor(BaseProcessor):
                 message, code = ResponseFormatter.extract_error_info(error)
                 return ResponseFormatter.format_error(message, ResponseFormatter.ERROR_CODES["VALIDATION_ERROR"])
             
-            # Execute search with the provided attributes
+            # CRITICAL: Extract user_id from auth context for user isolation
+            auth_context = AuthContext.from_payload(payload)
+            if not auth_context.is_authenticated():
+                return ResponseFormatter.format_error(
+                    "User authentication required for content search",
+                    ResponseFormatter.ERROR_CODES["AUTHENTICATION_ERROR"]
+                )
+            
+            # Execute search with the provided attributes and user_id for user isolation
             search_result = self.helper.search_content(
                 search_params=search_params,
                 limit=limit,
-                pagination_token=pagination_token
+                pagination_token=pagination_token,
+                user_id=auth_context.user_id
             )
             
             # Handle error case
@@ -668,6 +693,33 @@ class ContentProcessor(BaseProcessor):
         except Exception as e:
             logger.error(f"Error enriching book data for ISBN {isbn}: {str(e)}")
             return {"error": f"Failed to enrich book data: {str(e)}"}
+
+    def _process_auth_context_safely(self, auth_context: Any) -> Dict:
+        """
+        Process auth_context to ensure it's properly formatted as a dictionary
+        with type-safe handling of the cognito:groups field.
+        
+        Args:
+            auth_context: The auth_context value (could be string, dict, or other)
+            
+        Returns:
+            Safely processed auth_context as a dictionary
+        """
+        try:
+            # Use DataTypeUtils to safely process auth_context
+            processed_context = DataTypeUtils.safe_dict_conversion(auth_context)
+            
+            # Special handling for cognito:groups field if present
+            if "cognito:groups" in processed_context:
+                groups_value = processed_context["cognito:groups"]
+                processed_context["cognito:groups"] = DataTypeUtils.safe_list_conversion(groups_value)
+            
+            return processed_context
+            
+        except Exception as e:
+            logger.error(f"Error processing auth_context safely: {str(e)}")
+            # Return minimal safe auth_context on error
+            return {}
 
     def _apply_user_isolation(self, search_params: Dict, payload: Dict) -> Dict:
         """

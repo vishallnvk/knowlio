@@ -1,10 +1,11 @@
 import boto3
 from boto3.dynamodb.conditions import Key, Attr
-from typing import Dict, List
+from typing import Dict, List, Any, Optional, Union
 import botocore.exceptions
 
 from helpers.common_helper.logger_helper import LoggerHelper
 from helpers.common_helper.common_helper import Retry
+from helpers.common_helper.database_operation_wrapper import DatabaseOperationWrapper
 
 logger = LoggerHelper(__name__).get_logger()
 
@@ -16,31 +17,102 @@ class DynamoDBHelper:
         self.table = self.dynamodb.Table(table_name)
 
     @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
-    def put_item(self, item: Dict) -> None:
-        logger.info("Putting item into DynamoDB: %s", item)
-        self.table.put_item(Item=item)
+    def put_item(self, item: Any) -> None:
+        """
+        Put an item into DynamoDB with comprehensive type safety.
+        
+        Args:
+            item: Item to put (any type, will be sanitized)
+        """
+        # Validate operation
+        if not DatabaseOperationWrapper.validate_database_operation("put_item", item=item):
+            raise ValueError("Invalid put_item operation parameters")
+        
+        # Convert item to safe format
+        safe_item = DatabaseOperationWrapper.safe_item_conversion(item)
+        
+        # Log operation safely
+        DatabaseOperationWrapper.log_operation_safely("put_item", item=safe_item)
+        
+        # Execute the operation
+        self.table.put_item(Item=safe_item)
 
     @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
-    def get_item(self, key: Dict) -> Dict:
-        logger.info("Getting item with key: %s", key)
-        response = self.table.get_item(Key=key)
-        return response.get("Item")
+    def get_item(self, key: Union[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """
+        Get an item from DynamoDB with comprehensive type safety.
+        
+        Args:
+            key: Key to get (string or dict, will be sanitized)
+            
+        Returns:
+            Item if found, None otherwise
+        """
+        # Validate operation
+        if not DatabaseOperationWrapper.validate_database_operation("get_item", key=key):
+            raise ValueError("Invalid get_item operation parameters")
+        
+        # Convert key to safe format
+        safe_key = DatabaseOperationWrapper.safe_key_conversion(key)
+        
+        # Log operation safely
+        DatabaseOperationWrapper.log_operation_safely("get_item", key=safe_key)
+        
+        # Execute the operation
+        response = self.table.get_item(Key=safe_key)
+        item = response.get("Item")
+        
+        # Sanitize the response
+        if item:
+            return DatabaseOperationWrapper.sanitize_for_database(item)
+        return None
 
     @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
-    def update_item(self, key_name: str, key_value: str, updates: Dict) -> Dict:
-        update_expression = "SET " + ", ".join(f"#{k}=:{k}" for k in updates)
-        expression_attr_names = {f"#{k}": k for k in updates}
-        expression_attr_values = {f":{k}": v for k, v in updates.items()}
-
-        logger.info("Updating item in DynamoDB")
+    def update_item(self, key: Union[str, Dict[str, Any]], updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Update an item in DynamoDB with comprehensive type safety.
+        
+        Args:
+            key: Key to update (string or dict, will be sanitized)
+            updates: Updates to apply (dict, will be sanitized)
+            
+        Returns:
+            Updated item attributes if successful, None otherwise
+        """
+        # Validate operation
+        if not DatabaseOperationWrapper.validate_database_operation("update_item", key=key, updates=updates):
+            raise ValueError("Invalid update_item operation parameters")
+        
+        # Convert key to safe format
+        safe_key = DatabaseOperationWrapper.safe_key_conversion(key)
+        
+        # Prepare safe update expression
+        update_expression, expression_attr_names, expression_attr_values = \
+            DatabaseOperationWrapper.prepare_update_expression(updates)
+        
+        if not update_expression:
+            logger.warning("No valid updates provided")
+            return None
+        
+        # Log operation safely
+        DatabaseOperationWrapper.log_operation_safely("update_item", 
+                                                      key=safe_key, 
+                                                      updates=updates)
+        
+        # Execute the operation
         response = self.table.update_item(
-            Key={key_name: key_value},
+            Key=safe_key,
             UpdateExpression=update_expression,
             ExpressionAttributeNames=expression_attr_names,
             ExpressionAttributeValues=expression_attr_values,
             ReturnValues="ALL_NEW"
         )
-        return response.get("Attributes")
+        
+        # Sanitize the response
+        attributes = response.get("Attributes")
+        if attributes:
+            return DatabaseOperationWrapper.sanitize_for_database(attributes)
+        return None
 
     @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
     def query_items(self, key_name: str, key_value: str, limit: int = None, 

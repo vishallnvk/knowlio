@@ -20,12 +20,15 @@ Follows AWS best practices for layered architecture with Cognito authentication:
 import json
 import traceback
 from typing import Any, Dict, Optional, Tuple
+import uuid
 
 from exceptions.processor_exceptions.exceptions import ProcessorNotFoundError, InvalidInputError, \
     ProcessorExecutionError
 from helpers.common_helper.logger_helper import LoggerHelper
 from helpers.common_helper.cognito_helper import get_user_details_from_event, validate_user_access, ensure_user_has_groups
 from helpers.common_helper.auth_context import AuthContext
+from helpers.common_helper.http_response_handler import HttpResponseHandlerFactory
+from helpers.common_helper.response_formatter import ResponseFormatter
 from config.api_routes import KnowlioApiRoutes, ApiRoute
 from sync_processor_registry.bootstrap import load_all_processors
 from sync_processor_registry.processor_registry import ProcessorRegistry
@@ -132,7 +135,15 @@ def _handle_api_gateway_event(event: Dict[str, Any], context: Any) -> Dict[str, 
     processor = _resolve_processor(route.processor_name)
     result = _execute_processor(processor, route.action, payload)
     
-    return _http_response(200, result)
+    # Generate request ID for tracking
+    request_id = str(uuid.uuid4())
+    
+    # Use HttpResponseHandler to create proper HTTP response with error detection
+    return HttpResponseHandlerFactory.create_response(
+        processor_result=result,
+        request_id=request_id,
+        logger=logger
+    )
 
 
 def _handle_direct_processor_event(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
