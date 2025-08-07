@@ -61,6 +61,15 @@ class DynamoDBStack(Stack):
             projection_type=dynamodb.ProjectionType.ALL
         )
         
+        # Add GSI for user-aware content queries with composite key (user_id#type)
+        # This ensures pagination respects user boundaries and eliminates the pagination bug
+        content_table.table.add_global_secondary_index(
+            index_name="user_type-index",
+            partition_key=dynamodb.Attribute(name="user_type_key", type=dynamodb.AttributeType.STRING),
+            sort_key=dynamodb.Attribute(name="content_id", type=dynamodb.AttributeType.STRING),
+            projection_type=dynamodb.ProjectionType.ALL
+        )
+        
         # Add GSI for querying content by status
         content_table.table.add_global_secondary_index(
             index_name="status-index",

@@ -184,6 +184,99 @@ class DynamoDBHelper:
             )
 
     @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
+    def query_user_aware_items(self, user_id: str, content_type: str, limit: int = None, 
+                              last_evaluated_key: Dict = None) -> Dict:
+        """
+        Query items using user-aware composite key for efficient user isolation with pagination.
+        This method eliminates the pagination bug by ensuring queries respect user boundaries.
+        
+        Args:
+            user_id: The user ID for user isolation
+            content_type: The content type to query (BOOK, AUDIO, etc.)
+            limit: Optional maximum number of items to return
+            last_evaluated_key: Optional key to start from for pagination
+            
+        Returns:
+            Dict containing items and optional last_evaluated_key for pagination
+        """
+        # Create composite key value in format: user_id#type
+        composite_key_value = f"{user_id}#{content_type}"
+        
+        if last_evaluated_key:
+            logger.info("User-aware query: user_type_key = %s (limit: %s, pagination_token: %s)", 
+                       composite_key_value, limit, last_evaluated_key)
+        else:
+            logger.info("User-aware query: user_type_key = %s (limit: %s)", composite_key_value, limit)
+        
+        query_kwargs = {
+            "IndexName": "user_type-index",
+            "KeyConditionExpression": Key("user_type_key").eq(composite_key_value)
+        }
+        
+        if limit is not None:
+            query_kwargs["Limit"] = limit
+            
+        if last_evaluated_key:
+            # CRITICAL FIX: Validate that the pagination token has the correct composite GSI structure
+            if "user_type_key" not in last_evaluated_key:
+                logger.warning("Pagination token missing user_type_key, reconstructing for composite GSI")
+                # Reconstruct the correct key structure
+                fixed_key = {
+                    "user_type_key": composite_key_value
+                }
+                # Copy over any other keys from the token
+                for k, v in last_evaluated_key.items():
+                    if k != "type":  # Skip the old "type" field
+                        fixed_key[k] = v
+                query_kwargs["ExclusiveStartKey"] = fixed_key
+                logger.info("PAGINATION DEBUG: Reconstructed ExclusiveStartKey: %s", fixed_key)
+            else:
+                query_kwargs["ExclusiveStartKey"] = last_evaluated_key
+                logger.info("PAGINATION DEBUG: Using original ExclusiveStartKey: %s", last_evaluated_key)
+            
+        try:
+            response = self.table.query(**query_kwargs)
+            logger.info("User-aware query succeeded using composite GSI")
+            
+            result = {
+                "items": response.get("Items", []),
+                "count": response.get("Count", 0),
+                "scanned_count": response.get("ScannedCount", 0),
+            }
+            
+            # Add pagination token if there are more results
+            if "LastEvaluatedKey" in response:
+                # CRITICAL FIX: Ensure the returned LastEvaluatedKey has the correct format
+                # for the next pagination request
+                raw_key = response["LastEvaluatedKey"]
+                result["last_evaluated_key"] = raw_key
+                
+                # Debug log to verify the key structure
+                logger.info("Raw LastEvaluatedKey structure: %s", raw_key)
+                
+                if len(result["items"]) > 0:
+                    result["has_more"] = True
+                else:
+                    result["has_more"] = False
+                    logger.info("Setting has_more=false because no items were returned despite having LastEvaluatedKey")
+            else:
+                result["has_more"] = False
+                
+            # Add limit to result for proper pagination handling
+            if limit is not None:
+                result["limit"] = limit
+                
+            logger.info("User-aware query returned %d items for user %s, has_more=%s", 
+                       len(result["items"]), user_id, result["has_more"])
+            return result
+            
+        except Exception as e:
+            logger.error("User-aware query failed for user %s, type %s. Error: %s", user_id, content_type, e)
+            # Fallback to regular user_id query if composite index is not available
+            logger.info("Falling back to user_id-index query")
+            return self.query_items("user_id", user_id, limit, last_evaluated_key)
+
+    @Retry(max_attempts=3, initial_wait=1.0, exceptions=[botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError])
     def scan_items(self, filter_expression=None, limit: int = None, 
                   last_evaluated_key: Dict = None) -> Dict:
         """

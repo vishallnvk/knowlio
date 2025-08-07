@@ -48,17 +48,23 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     
     try:
         # Extract user information from the event
-        user_id = event['userName']
         user_pool_id = event['userPoolId']
+        
+        # Get user attributes from the event (standard approach)
+        user_attributes = event.get('request', {}).get('userAttributes', {})
+        
+        # Use the 'sub' claim as the user_id (this is the actual Cognito User Pool user ID)
+        # NOT event['userName'] which is the federated identity ID
+        user_id = user_attributes.get('sub')
+        if not user_id:
+            logger.error("No 'sub' claim found in user attributes")
+            return event
         
         logger.info(f"Processing pre-token generation for user: {user_id}")
         
         # Get user's actual groups from Cognito
         user_groups = get_user_groups(user_pool_id, user_id)
         logger.info(f"User {user_id} belongs to groups: {user_groups}")
-        
-        # Get user attributes from the event (standard approach)
-        user_attributes = event.get('request', {}).get('userAttributes', {})
         logger.info(f"User attributes from event: {list(user_attributes.keys())}")
         
         # Check if this is first login (user doesn't exist in database)

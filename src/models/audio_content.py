@@ -12,7 +12,8 @@ class AudioContent(ContentModel):
         super().__init__(
             content_data.get("content_id"),
             content_data.get("user_id"),
-            content_data.get("insert_time")
+            content_data.get("insert_time"),
+            content_type="AUDIO"
         )
         # TODO: Add audio-specific attributes as specified by the user
         self.title: str = content_data.get("title", "")
@@ -39,10 +40,11 @@ class AudioContent(ContentModel):
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert the model to a dictionary representation."""
-        return {
-            "content_id": self.content_id,
-            "user_id": self.user_id,
-            "insert_time": self.insert_time,
+        # Get base dictionary with composite key
+        base_dict = super().to_dict()
+        
+        # Add audio-specific fields
+        audio_dict = {
             "type": "AUDIO",
             "title": self.title,
             "duration": self.duration,
@@ -51,3 +53,7 @@ class AudioContent(ContentModel):
             "training_status": self.training_status,
             "licensing_status": self.licensing_status
         }
+        
+        # Merge base and audio-specific dictionaries
+        base_dict.update(audio_dict)
+        return base_dict

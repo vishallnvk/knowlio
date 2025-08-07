@@ -465,7 +465,7 @@ class ContentProcessor(BaseProcessor):
             action = payload.get("__action__", "search_content")
             search_params = {}
             limit = payload.get("limit")
-            pagination_token = payload.get("pagination_token")
+            pagination_token = payload.get("pagination_token") or payload.get("next_token")
             
             # Format 1: list_content_by_publisher
             if action == "list_content_by_user":
@@ -832,10 +832,19 @@ class ContentProcessor(BaseProcessor):
                 message, code = ResponseFormatter.extract_error_info(error)
                 return ResponseFormatter.format_error(message, ResponseFormatter.ERROR_CODES["VALIDATION_ERROR"])
             
-            # Execute search with count_only=True
+            # CRITICAL: Extract user_id from auth context for user isolation
+            auth_context = AuthContext.from_payload(payload)
+            if not auth_context.is_authenticated():
+                return ResponseFormatter.format_error(
+                    "User authentication required for content count",
+                    ResponseFormatter.ERROR_CODES["AUTHENTICATION_ERROR"]
+                )
+            
+            # Execute search with count_only=True and user_id for user isolation
             count_result = self.helper.search_content(
                 search_params=search_params,
-                count_only=True
+                count_only=True,
+                user_id=auth_context.user_id
             )
             
             # Handle error case

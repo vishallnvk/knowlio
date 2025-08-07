@@ -48,11 +48,17 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     
     try:
         # Extract user information from the event
-        user_id = event['userName']
         user_pool_id = event['userPoolId']
         
         # Get user attributes
         user_attributes = event.get('request', {}).get('userAttributes', {})
+        
+        # Use the 'sub' claim as the user_id (this is the actual Cognito User Pool user ID)
+        # NOT event['userName'] which is the federated identity ID
+        user_id = user_attributes.get('sub')
+        if not user_id:
+            logger.error("No 'sub' claim found in user attributes")
+            return event
         email = user_attributes.get('email', '')
         given_name = user_attributes.get('given_name', '')
         family_name = user_attributes.get('family_name', '')

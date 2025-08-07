@@ -12,7 +12,8 @@ class BookContent(ContentModel):
         super().__init__(
             content_data.get("content_id"),
             content_data.get("user_id"),
-            content_data.get("insert_time")
+            content_data.get("insert_time"),
+            content_type="BOOK"
         )
         self.authors: List[str] = content_data.get("authors", [])
         self.publisher: str = content_data.get("publisher", "")
@@ -45,10 +46,11 @@ class BookContent(ContentModel):
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert the model to a dictionary representation."""
-        return {
-            "content_id": self.content_id,
-            "user_id": self.user_id,
-            "insert_time": self.insert_time,
+        # Get base dictionary with composite key
+        base_dict = super().to_dict()
+        
+        # Add book-specific fields
+        book_dict = {
             "type": "BOOK",
             "authors": self.authors,
             "publisher": self.publisher,
@@ -62,3 +64,7 @@ class BookContent(ContentModel):
             "thumbnail_url": self.thumbnail_url,
             "small_thumbnail_url": self.small_thumbnail_url
         }
+        
+        # Merge base and book-specific dictionaries
+        base_dict.update(book_dict)
+        return base_dict
