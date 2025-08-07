@@ -43,8 +43,8 @@ class UserIsolationHelper:
             
         elif role == "PUBLISHER":
             # Publishers can only see data they own or created
-            search_params["publisher_id"] = user_id
-            logger.info(f"Applied publisher isolation for user {user_id}")
+            search_params["user_id"] = user_id
+            logger.info(f"Applied user isolation for user {user_id}")
             
         elif role == "ADMIN":
             # Admins can see all data - no isolation needed

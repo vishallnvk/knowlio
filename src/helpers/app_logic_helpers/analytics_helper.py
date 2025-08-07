@@ -85,8 +85,8 @@ class AnalyticsHelper:
             access_types[access_type] = access_types.get(access_type, 0) + 1
             
             # Count publishers
-            publisher_id = log.get("publisher_id", DEFAULT_PUBLISHER_ID)
-            publishers[publisher_id] = publishers.get(publisher_id, 0) + 1
+            user_id = log.get("user_id", DEFAULT_PUBLISHER_ID)
+            publishers[user_id] = publishers.get(user_id, 0) + 1
 
         return {
             "consumer_id": consumer_id,

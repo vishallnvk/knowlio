@@ -287,7 +287,7 @@ class ContentDataValidator:
         list_attributes = ['authors', 'keywords', 'tags', 'categories']
         
         # List of attributes that should be strings
-        string_attributes = ['title', 'publisher', 'isbn', 'content_id', 'publisher_id', 'type', 'status', 
+        string_attributes = ['title', 'publisher', 'isbn', 'content_id', 'user_id', 'type', 'status',
                            'licensing_status', 'rag_status', 'training_status']
         
         # List of attributes that should be numbers

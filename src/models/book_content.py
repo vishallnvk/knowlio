@@ -11,7 +11,7 @@ class BookContent(ContentModel):
     def __init__(self, content_data: Dict):
         super().__init__(
             content_data.get("content_id"),
-            content_data.get("publisher_id"),
+            content_data.get("user_id"),
             content_data.get("insert_time")
         )
         self.authors: List[str] = content_data.get("authors", [])
@@ -47,7 +47,7 @@ class BookContent(ContentModel):
         """Convert the model to a dictionary representation."""
         return {
             "content_id": self.content_id,
-            "publisher_id": self.publisher_id,
+            "user_id": self.user_id,
             "insert_time": self.insert_time,
             "type": "BOOK",
             "authors": self.authors,

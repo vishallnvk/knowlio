@@ -47,10 +47,10 @@ class DynamoDBStack(Stack):
             content_table_props
         )
         
-        # Add GSI for querying content by publisher_id
+        # Add GSI for querying content by user_id
         content_table.table.add_global_secondary_index(
-            index_name="publisher_id-index",
-            partition_key=dynamodb.Attribute(name="publisher_id", type=dynamodb.AttributeType.STRING),
+            index_name="user_id-index",
+            partition_key=dynamodb.Attribute(name="user_id", type=dynamodb.AttributeType.STRING),
             projection_type=dynamodb.ProjectionType.ALL
         )
         

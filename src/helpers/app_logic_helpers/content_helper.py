@@ -228,9 +228,9 @@ class ContentHelper:
             # Validate and normalize search parameters to prevent type errors
             validated_search_params = ContentDataValidator.validate_search_parameters(search_params)
             
-            # CRITICAL: Always add publisher_id filter for user isolation
-            # (Content items store user information in publisher_id field)
-            validated_search_params["publisher_id"] = user_id
+            # CRITICAL: Always add user_id filter for user isolation
+            # (Content items store user information in user_id field)
+            validated_search_params["user_id"] = user_id
             
             # Convert pagination token from string to dict if provided
             last_evaluated_key = self._decode_pagination_token(pagination_token)
@@ -408,16 +408,16 @@ class ContentHelper:
             True if user owns the content, False otherwise
         """
         try:
-            # Get the publisher_id from the item (content items store user info in publisher_id field)
-            item_publisher_id = item.get("publisher_id")
+            # Get the user_id from the item (content items store user info in user_id field)
+            item_user_id = item.get("user_id")
             
-            # If no publisher_id in item, it's not owned by any user (should not happen)
-            if not item_publisher_id:
-                logger.warning("Content item missing publisher_id: %s", item.get("content_id", "unknown"))
+            # If no user_id in item, it's not owned by any user (should not happen)
+            if not item_user_id:
+                logger.warning("Content item missing user_id: %s", item.get("content_id", "unknown"))
                 return False
             
-            # Check if the publisher_id matches the user_id
-            return DataTypeUtils.safe_equality_check(item_publisher_id, user_id)
+            # Check if the user_id matches the requesting user_id
+            return DataTypeUtils.safe_equality_check(item_user_id, user_id)
             
         except Exception as e:
             logger.error("Error checking content ownership: %s", str(e))

@@ -159,8 +159,8 @@ class ContentProcessor(BaseProcessor):
             # Add authenticated user info for audit trail if available
             auth_context = AuthContext.from_payload(payload)
             if auth_context.is_authenticated():
-                # Add publisher_id from authenticated user
-                payload["publisher_id"] = auth_context.user_id
+                # Add user_id from authenticated user
+                payload["user_id"] = auth_context.user_id
                 logger.info(f"User {auth_context.user_id} ({auth_context.role}) creating {payload['type']} content")
                 
                 # Fetch user's AI consent preferences as defaults for content status fields
@@ -448,8 +448,8 @@ class ContentProcessor(BaseProcessor):
     def _search_content(self, payload: Dict) -> Dict:
         """
         Unified search method for content that handles all supported formats:
-        1. list_content_by_publisher: {"publisher_id": "pub123", ...}
-        2. list_content_by_publisher_and_type: {"publisher_id": "pub123", "content_type": "BOOK", ...}
+        1. list_content_by_user: {"user_id": "user123", ...}
+        2. list_content_by_user_and_type: {"user_id": "user123", "content_type": "BOOK", ...}
         3. search_content: {any field combinations without the attributes wrapper}
         4. Legacy format: {"attributes": {field combinations}, ...}
         
@@ -457,7 +457,7 @@ class ContentProcessor(BaseProcessor):
         - limit: Maximum number of items to return
         - pagination_token: Token for retrieving the next page of results
         
-        USER ISOLATION: Automatically filters content by authenticated user's publisher_id
+        USER ISOLATION: Automatically filters content by authenticated user's user_id
         unless the user is an admin with explicit override permissions.
         """
         try:
@@ -468,13 +468,13 @@ class ContentProcessor(BaseProcessor):
             pagination_token = payload.get("pagination_token")
             
             # Format 1: list_content_by_publisher
-            if action == "list_content_by_publisher":
-                require_keys(payload, ["publisher_id"])
-                search_params = {"publisher_id": payload["publisher_id"]}
+            if action == "list_content_by_user":
+                require_keys(payload, ["user_id"])
+                search_params = {"user_id": payload["user_id"]}
             
             # Format 2: list_content_by_publisher_and_type
-            elif action == "list_content_by_publisher_and_type":
-                require_keys(payload, ["publisher_id", "content_type"])
+            elif action == "list_content_by_user_and_type":
+                require_keys(payload, ["user_id", "content_type"])
                 content_type = payload["content_type"]
                 
                 # Validate content_type parameter
@@ -484,7 +484,7 @@ class ContentProcessor(BaseProcessor):
                     return ResponseFormatter.format_error(message, ResponseFormatter.ERROR_CODES["VALIDATION_ERROR"])
                 
                 search_params = {
-                    "publisher_id": payload["publisher_id"],
+                    "user_id": payload["user_id"],
                     "type": content_type
                 }
                 
@@ -723,7 +723,7 @@ class ContentProcessor(BaseProcessor):
 
     def _apply_user_isolation(self, search_params: Dict, payload: Dict) -> Dict:
         """
-        Apply user isolation by automatically filtering content by authenticated user's publisher_id
+        Apply user isolation by automatically filtering content by authenticated user's user_id
         unless already specified or user is admin with override permissions.
         
         Args:
@@ -742,10 +742,10 @@ class ContentProcessor(BaseProcessor):
                 logger.warning("User isolation: No authenticated user found, returning original params")
                 return search_params
             
-            # If publisher_id is already specified in search params, respect the existing value
-            # This allows admin users to search specific publishers if they have explicit publisher_id
-            if "publisher_id" in search_params:
-                logger.info(f"User isolation: publisher_id already specified ({search_params['publisher_id']}), using existing value")
+            # If user_id is already specified in search params, respect the existing value
+            # This allows admin users to search specific users if they have explicit user_id
+            if "user_id" in search_params:
+                logger.info(f"User isolation: user_id already specified ({search_params['user_id']}), using existing value")
                 return search_params
             
             # For admin users, check if they have an explicit bypass flag
@@ -754,11 +754,11 @@ class ContentProcessor(BaseProcessor):
                 logger.info(f"User isolation: Admin user {auth_context.user_id} bypassing user isolation")
                 return search_params
             
-            # Apply user isolation: automatically filter by authenticated user's publisher_id
+            # Apply user isolation: automatically filter by authenticated user's user_id
             search_params = search_params.copy()
-            search_params["publisher_id"] = auth_context.user_id
+            search_params["user_id"] = auth_context.user_id
             
-            logger.info(f"User isolation: Applied publisher_id filter for user {auth_context.user_id} ({auth_context.role})")
+            logger.info(f"User isolation: Applied user_id filter for user {auth_context.user_id} ({auth_context.role})")
             return search_params
             
         except Exception as e:

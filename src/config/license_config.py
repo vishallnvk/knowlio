@@ -10,7 +10,7 @@ DEFAULT_RETRY_MAX_ATTEMPTS = 3
 DEFAULT_RETRY_INITIAL_WAIT = 1.0
 
 # Indexed fields for efficient querying
-INDEXED_FIELDS = ["consumer_id", "content_id", "publisher_id", "status"]
+INDEXED_FIELDS = ["consumer_id", "content_id", "user_id", "status"]
 
 # Valid license statuses
 VALID_LICENSE_STATUSES = ["ACTIVE", "REVOKED"]
